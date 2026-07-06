@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
     QFormLayout,
+    QFrame,
     QGroupBox,
     QHBoxLayout,
     QLabel,
@@ -58,6 +59,39 @@ from wp_auto_poster_gui.gui.tray_icon import create_tray_icon
 from wp_auto_poster_gui.gui.workers import ConnectionTestWorker, PosterWorker
 
 
+class SelectPanel(QFrame):
+    clicked = Signal()
+
+    def __init__(self, title: str, placeholder: str):
+        super().__init__()
+        self.setObjectName("selectPanel")
+        self.setCursor(Qt.PointingHandCursor)
+        self.setMinimumHeight(78)
+        self.title_label = QLabel(title)
+        self.title_label.setObjectName("selectPanelTitle")
+        self.path_label = QLabel(placeholder)
+        self.path_label.setObjectName("selectPanelPath")
+        self.path_label.setAlignment(Qt.AlignCenter)
+        self.path_label.setWordWrap(True)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(2)
+        layout.addStretch(1)
+        layout.addWidget(self.title_label, 0, Qt.AlignCenter)
+        layout.addWidget(self.path_label, 0, Qt.AlignCenter)
+        layout.addStretch(1)
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802 - Qt override
+        if event.button() == Qt.LeftButton:
+            self.clicked.emit()
+        super().mousePressEvent(event)
+
+    def set_path(self, value: str, placeholder: str) -> None:
+        path = Path(value) if value else None
+        self.path_label.setText(path.name if path else placeholder)
+
+
 class MainWindow(QMainWindow):
     schedule_message = Signal(str)
 
@@ -80,6 +114,7 @@ class MainWindow(QMainWindow):
         self.retry_count = 3
         self.timeout_seconds = 30
 
+        self._apply_style()
         self._build_ui()
         self._load_settings()
 
@@ -90,11 +125,252 @@ class MainWindow(QMainWindow):
 
     def _build_ui(self) -> None:
         tabs = QTabWidget()
-        tabs.addTab(self._manual_tab(), "Đăng thủ công")
+        tabs.addTab(self._manual_tab_compact(), "📝 Đăng thủ công")
         self.schedule_tab = ScheduleTab()
         self.schedule_tab.config_changed.connect(self._on_schedule_changed)
-        tabs.addTab(self.schedule_tab, "Lịch tự động")
+        tabs.addTab(self.schedule_tab, "⏰ Lịch tự động")
         self.setCentralWidget(tabs)
+
+    def _apply_style(self) -> None:
+        self.setStyleSheet(
+            """
+            QWidget {
+                background: #f4f4f2;
+                color: #202020;
+                font-family: "Segoe UI", Arial, sans-serif;
+                font-size: 9pt;
+            }
+            QTabWidget::pane {
+                border: 1px solid #bdbdbd;
+                background: #f7f7f5;
+                top: -1px;
+            }
+            QTabBar::tab {
+                background: #eeeeec;
+                border: 1px solid #bdbdbd;
+                border-bottom-color: #aaaaaa;
+                padding: 5px 13px;
+                margin-right: 1px;
+            }
+            QTabBar::tab:selected {
+                background: #ffffff;
+                border-bottom-color: #ffffff;
+            }
+            QGroupBox {
+                border: 1px solid #d5d5d2;
+                margin-top: 12px;
+                padding: 8px;
+                background: #fafaf8;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 8px;
+                padding: 0 4px;
+                background: #f4f4f2;
+            }
+            QLineEdit, QComboBox, QSpinBox, QTimeEdit, QDateTimeEdit {
+                min-height: 22px;
+                border: 1px solid #b8b8b4;
+                background: #ffffff;
+                padding: 2px 5px;
+            }
+            QPushButton {
+                min-height: 24px;
+                border: 1px solid #adadad;
+                background: #eeeeec;
+                padding: 3px 11px;
+            }
+            QPushButton:hover { background: #f8f8f6; }
+            QPushButton:pressed { background: #dededc; }
+            QPushButton:disabled {
+                color: #9a9a9a;
+                background: #eeeeee;
+            }
+            QTableWidget {
+                gridline-color: #c8c8c5;
+                background: #ffffff;
+                alternate-background-color: #f5f5f3;
+                border: 1px solid #c7c7c4;
+            }
+            QHeaderView::section {
+                background: #eeeeec;
+                border: 1px solid #c7c7c4;
+                padding: 4px;
+                font-weight: 600;
+            }
+            QTextEdit {
+                background: #ffffff;
+                border: 1px solid #c7c7c4;
+                font-family: Consolas, "Courier New", monospace;
+            }
+            QLabel#mutedLabel { color: #747474; }
+            QLabel#warningLabel {
+                color: #9a6400;
+                background: #fff7df;
+                border: 1px solid #eed39b;
+                padding: 3px 6px;
+            }
+            QFrame#selectPanel {
+                border: 2px dashed #8f8f8c;
+                border-radius: 9px;
+                background: #fbfbfa;
+            }
+            QFrame#selectPanel:hover {
+                background: #ffffff;
+                border-color: #6f6f6b;
+            }
+            QLabel#selectPanelTitle {
+                font-weight: 700;
+                background: transparent;
+            }
+            QLabel#selectPanelPath {
+                color: #555555;
+                background: transparent;
+            }
+            """
+        )
+
+    def _manual_tab_compact(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(10, 8, 10, 8)
+        layout.setSpacing(6)
+
+        connection_box = QGroupBox("1. Kết nối WordPress")
+        connection_layout = QVBoxLayout(connection_box)
+        connection_row = QHBoxLayout()
+        self.site_url_edit = QLineEdit()
+        self.site_url_edit.setPlaceholderText("https://ten-mien-cua-ban.com")
+        self.username_edit = QLineEdit()
+        self.username_edit.setPlaceholderText("username")
+        self.password_edit = QLineEdit()
+        self.password_edit.setPlaceholderText("Application Password")
+        self.password_edit.setEchoMode(QLineEdit.Password)
+        self.connection_status = QLabel("Chưa kiểm tra kết nối.")
+        save_button = QPushButton("💾 Lưu")
+        save_button.clicked.connect(self._save_settings)
+        test_button = QPushButton("🔌 Kiểm tra kết nối")
+        test_button.clicked.connect(self._test_connection)
+
+        connection_row.addWidget(QLabel("URL:"))
+        connection_row.addWidget(self.site_url_edit, 3)
+        connection_row.addWidget(QLabel("User:"))
+        connection_row.addWidget(self.username_edit, 2)
+        connection_row.addWidget(QLabel("App Password:"))
+        connection_row.addWidget(self.password_edit, 3)
+        connection_row.addWidget(save_button)
+        connection_row.addWidget(test_button)
+        connection_layout.addLayout(connection_row)
+        connection_layout.addWidget(self.connection_status)
+
+        source_box = QGroupBox("2. Dữ liệu")
+        source_layout = QVBoxLayout(source_box)
+        self.excel_edit = QLineEdit()
+        self.image_folder_edit = QLineEdit()
+        self.excel_edit.hide()
+        self.image_folder_edit.hide()
+        self.max_images_spin = QSpinBox()
+        self.max_images_spin.setRange(0, 50)
+        self.max_images_spin.setValue(2)
+
+        self.image_size_combo = QComboBox()
+        for label, _value in _IMAGE_SIZE_OPTIONS:
+            self.image_size_combo.addItem(label)
+        self.image_custom_width_spin = QSpinBox()
+        self.image_custom_width_spin.setRange(100, 2000)
+        self.image_custom_width_spin.setValue(800)
+        self.image_custom_width_spin.setSuffix(" px")
+        self.image_custom_width_spin.setVisible(False)
+        self.image_size_combo.currentIndexChanged.connect(self._on_image_size_changed)
+
+        self.image_align_combo = QComboBox()
+        for label, _value in _IMAGE_ALIGN_OPTIONS:
+            self.image_align_combo.addItem(label)
+
+        self.excel_panel = SelectPanel("File Excel bài viết", "Chưa chọn file Excel")
+        self.excel_panel.clicked.connect(self._choose_excel)
+        self.image_panel = SelectPanel("Thư mục ảnh (tùy chọn)", "Chưa chọn thư mục ảnh")
+        self.image_panel.clicked.connect(self._choose_image_folder)
+        source_cards = QHBoxLayout()
+        source_cards.setSpacing(8)
+        source_cards.addWidget(self.excel_panel, 1)
+        source_cards.addWidget(self.image_panel, 1)
+        source_layout.addLayout(source_cards)
+
+        source_options = QHBoxLayout()
+        source_options.addWidget(QLabel("Số ảnh tối đa chèn mỗi bài:"))
+        source_options.addWidget(self.max_images_spin)
+        clear_images_button = QPushButton("Bỏ chọn thư mục ảnh")
+        clear_images_button.clicked.connect(self._clear_image_folder)
+        source_options.addWidget(clear_images_button)
+        source_options.addSpacing(10)
+        source_options.addWidget(QLabel("Kích thước:"))
+        source_options.addWidget(self.image_size_combo)
+        source_options.addWidget(self.image_custom_width_spin)
+        source_options.addWidget(QLabel("Căn ảnh:"))
+        source_options.addWidget(self.image_align_combo)
+        source_options.addStretch(1)
+        source_layout.addLayout(source_options)
+
+        preview_box = QGroupBox("3. Xem trước")
+        preview_layout = QVBoxLayout(preview_box)
+        self.preview_table = QTableWidget()
+        self.preview_table.setAlternatingRowColors(True)
+        self.orphan_label = QLabel()
+        self.orphan_label.setObjectName("warningLabel")
+        self.orphan_label.setWordWrap(True)
+        preview_layout.addWidget(self.preview_table, 1)
+        preview_layout.addWidget(self.orphan_label)
+
+        self.post_button = QPushButton("🚀 Đăng ngay")
+        self.post_button.setFixedWidth(112)
+        self.post_button.clicked.connect(self._start_publish)
+        self.stop_button = QPushButton("■ Dừng")
+        self.stop_button.setFixedWidth(90)
+        self.stop_button.setEnabled(False)
+        self.stop_button.clicked.connect(self._stop_publish)
+        self.progress = QProgressBar()
+        self.progress.setRange(0, 0)
+        self.progress.hide()
+        action_row = QHBoxLayout()
+        action_row.addWidget(self.post_button)
+        action_row.addWidget(self.stop_button)
+        action_row.addWidget(self.progress, 1)
+        action_row.addStretch(1)
+
+        bottom_row = QHBoxLayout()
+        bottom_row.setSpacing(8)
+        log_box = QGroupBox("Log")
+        log_layout = QVBoxLayout(log_box)
+        self.log_box = QTextEdit()
+        self.log_box.setReadOnly(True)
+        log_layout.addWidget(self.log_box)
+
+        result_box = QGroupBox("4. Kết quả")
+        result_layout = QVBoxLayout(result_box)
+        self.result_table = QTableWidget()
+        self.result_table.setAlternatingRowColors(True)
+        report_button = QPushButton("📊 Xuất báo cáo Excel")
+        report_button.clicked.connect(self._export_report)
+        result_layout.addWidget(self.result_table)
+        result_layout.addWidget(report_button)
+        bottom_row.addWidget(log_box, 5)
+        bottom_row.addWidget(result_box, 7)
+
+        advanced_button = QPushButton("⚙ Cài đặt nâng cao...")
+        advanced_button.clicked.connect(self._open_advanced_settings)
+        advanced_row = QHBoxLayout()
+        advanced_row.addWidget(advanced_button)
+        advanced_row.addStretch(1)
+
+        layout.addWidget(connection_box)
+        layout.addWidget(source_box)
+        layout.addWidget(preview_box, 4)
+        layout.addLayout(action_row)
+        layout.addLayout(bottom_row, 3)
+        layout.addLayout(advanced_row)
+        self._update_source_panels()
+        return page
 
     def _manual_tab(self) -> QWidget:
         page = QWidget()
@@ -225,13 +501,26 @@ class MainWindow(QMainWindow):
         path, _ = QFileDialog.getOpenFileName(self, "Chọn file Excel", "", "Excel (*.xlsx *.xls)")
         if path:
             self.excel_edit.setText(path)
+            self._update_source_panels()
             self._refresh_preview()
 
     def _choose_image_folder(self) -> None:
         path = QFileDialog.getExistingDirectory(self, "Chọn thư mục ảnh")
         if path:
             self.image_folder_edit.setText(path)
+            self._update_source_panels()
             self._refresh_preview()
+
+    def _clear_image_folder(self) -> None:
+        self.image_folder_edit.clear()
+        self._update_source_panels()
+        self._refresh_preview()
+
+    def _update_source_panels(self) -> None:
+        if hasattr(self, "excel_panel"):
+            self.excel_panel.set_path(self.excel_edit.text().strip(), "Chưa chọn file Excel")
+        if hasattr(self, "image_panel"):
+            self.image_panel.set_path(self.image_folder_edit.text().strip(), "Chưa chọn thư mục ảnh")
 
     def _refresh_preview(self) -> bool:
         excel_path = self.excel_edit.text().strip()
@@ -270,7 +559,7 @@ class MainWindow(QMainWindow):
             delay_seconds=self.delay_seconds,
         )
 
-    def _on_image_size_changed(self) -> None:
+    def _on_image_size_changed(self, *_args) -> None:
         """Show/hide custom width spin based on selected image size."""
         index = self.image_size_combo.currentIndex()
         size_value = _IMAGE_SIZE_OPTIONS[index][1] if index < len(_IMAGE_SIZE_OPTIONS) else "auto"

@@ -12,18 +12,32 @@ def fill_preview_table(
     posts: list[Post],
     image_matches: dict[str, MatchedImages],
 ) -> None:
-    headers = ["Dòng", "Tiêu đề", "Mã bài", "Trạng thái", "Ảnh nền", "Ảnh nội dung"]
+    headers = [
+        "#",
+        "Mã bài",
+        "Tiêu đề",
+        "Chuyên mục",
+        "Tags",
+        "Trạng thái",
+        "Ngày đăng",
+        "Ảnh nền",
+        "Số ảnh nội dung",
+    ]
     table.setColumnCount(len(headers))
     table.setHorizontalHeaderLabels(headers)
     table.setRowCount(len(posts))
     for row_index, post in enumerate(posts):
         match = image_matches.get(post.ma_bai or "", MatchedImages())
+        featured_status = "✅ local" if match.background else ("🌐 URL" if post.featured_image_url else "❌")
         values = [
             str(post.row_number),
-            post.title,
             post.ma_bai or "",
+            post.title,
+            post.category or "",
+            ", ".join(post.tags),
             post.status,
-            "Có" if match.background else "Không",
+            post.publish_date or "",
+            featured_status,
             str(len(match.content_images)),
         ]
         for column, value in enumerate(values):
@@ -32,7 +46,7 @@ def fill_preview_table(
 
 
 def fill_result_table(table: QTableWidget, results: list[PostResult]) -> None:
-    headers = ["Dòng", "Tiêu đề", "Kết quả", "Link", "Lỗi"]
+    headers = ["#", "Tiêu đề", "Kết quả", "Link", "Ghi chú / lỗi"]
     table.setColumnCount(len(headers))
     table.setHorizontalHeaderLabels(headers)
     table.setRowCount(len(results))
@@ -54,4 +68,4 @@ def orphan_label_text(orphan_files: list[Path]) -> str:
         return ""
     names = ", ".join(path.name for path in orphan_files[:20])
     suffix = "" if len(orphan_files) <= 20 else f" và {len(orphan_files) - 20} file khác"
-    return f"Ảnh không khớp mã bài: {names}{suffix}"
+    return f"⚠ Ảnh không khớp mã bài nào: {names}{suffix}"
