@@ -24,8 +24,19 @@ Cột tùy chọn:
 - `tags`
 - `status`
 - `publish_date`
+- `slug`
+- `meta_description`
 
 Nếu `status` trống, app dùng `draft` để tránh public ngoài ý muốn.
+
+App cũng tự nhận sheet `Bài SEO HTML` với cột tiếng Việt:
+
+- `Tiêu đề SEO` -> tiêu đề bài viết
+- `Nội dung HTML thuần` -> nội dung WordPress, giữ nguyên H2/H3/P
+- `Slug` -> slug bài viết
+- `Mô tả Meta SEO` -> excerpt WordPress
+- `Danh mục` -> category
+- `Từ khóa chính` và `Từ khóa phụ đã phủ thêm` -> tags
 
 ## Quy ước ảnh local
 

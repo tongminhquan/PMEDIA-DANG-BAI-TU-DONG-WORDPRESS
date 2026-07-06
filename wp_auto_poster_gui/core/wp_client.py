@@ -104,6 +104,10 @@ class WordPressClient:
             "content": content,
             "status": post.status or "draft",
         }
+        if post.slug:
+            payload["slug"] = post.slug
+        if post.meta_description:
+            payload["excerpt"] = post.meta_description
         if post.publish_date:
             payload["date"] = post.publish_date
         if featured_media_id:

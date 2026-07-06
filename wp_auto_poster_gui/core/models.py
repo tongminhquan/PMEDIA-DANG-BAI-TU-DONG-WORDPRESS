@@ -19,6 +19,8 @@ class Post:
     status: str = "draft"
     publish_date: str | None = None
     ma_bai: str | None = None
+    slug: str | None = None
+    meta_description: str | None = None
 
 
 @dataclass
