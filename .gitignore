@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.venv/
+venv/
+env/
+build/
+dist/
+config/settings.json
+config/schedule.json
+logs/
+*.log
+wordpress_post_report*.xlsx
