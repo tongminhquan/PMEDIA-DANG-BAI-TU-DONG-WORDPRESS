@@ -89,14 +89,17 @@ class WordPressClient:
         create_response = self._request("POST", taxonomy, json={"name": name})
         return int(create_response.json()["id"])
 
-    def check_duplicate_by_title(self, title: str) -> bool:
+    def find_post_by_title(self, title: str) -> dict[str, Any] | None:
         response = self._request("GET", "posts", params={"search": title, "per_page": 20})
         target = title.strip().lower()
         for post in response.json():
             rendered = post.get("title", {}).get("rendered", "")
             if _strip_html(rendered).strip().lower() == target:
-                return True
-        return False
+                return post
+        return None
+
+    def check_duplicate_by_title(self, title: str) -> bool:
+        return self.find_post_by_title(title) is not None
 
     def create_post(self, post: Post, content: str, featured_media_id: int | None = None) -> dict[str, Any]:
         payload: dict[str, Any] = {
@@ -108,6 +111,9 @@ class WordPressClient:
             payload["slug"] = post.slug
         if post.meta_description:
             payload["excerpt"] = post.meta_description
+        seo_meta = _rank_math_meta(post)
+        if seo_meta:
+            payload["meta"] = seo_meta
         if post.publish_date:
             payload["date"] = post.publish_date
         if featured_media_id:
@@ -121,6 +127,28 @@ class WordPressClient:
         for attempt in range(1, self.config.retry_count + 1):
             try:
                 return self._request("POST", "posts", json=payload).json()
+            except Exception as exc:
+                last_error = exc
+                if attempt < self.config.retry_count:
+                    time.sleep(min(2 * attempt, 10))
+        raise WordPressClientError(str(last_error))
+
+    def update_post_seo(self, post_id: int, post: Post) -> dict[str, Any]:
+        payload: dict[str, Any] = {}
+        if post.slug:
+            payload["slug"] = post.slug
+        if post.meta_description:
+            payload["excerpt"] = post.meta_description
+        seo_meta = _rank_math_meta(post)
+        if seo_meta:
+            payload["meta"] = seo_meta
+        if not payload:
+            return {}
+
+        last_error: Exception | None = None
+        for attempt in range(1, self.config.retry_count + 1):
+            try:
+                return self._request("POST", f"posts/{post_id}", json=payload).json()
             except Exception as exc:
                 last_error = exc
                 if attempt < self.config.retry_count:
@@ -156,3 +184,17 @@ def _strip_html(value: str) -> str:
     import re
 
     return re.sub(r"<[^>]+>", "", value)
+
+
+def _rank_math_meta(post: Post) -> dict[str, str]:
+    meta: dict[str, str] = {}
+    seo_title = (post.seo_title or post.title or "").strip()
+    if seo_title:
+        meta["rank_math_title"] = seo_title
+    if post.meta_description:
+        meta["rank_math_description"] = post.meta_description
+    focus_keywords = post.focus_keywords or post.tags
+    focus_keyword_text = ", ".join(keyword.strip() for keyword in focus_keywords if keyword.strip())
+    if focus_keyword_text:
+        meta["rank_math_focus_keyword"] = focus_keyword_text
+    return meta

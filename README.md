@@ -31,12 +31,32 @@ Nếu `status` trống, app dùng `draft` để tránh public ngoài ý muốn.
 
 App cũng tự nhận sheet `Bài SEO HTML` với cột tiếng Việt:
 
-- `Tiêu đề SEO` -> tiêu đề bài viết
 - `Nội dung HTML thuần` -> nội dung WordPress, giữ nguyên H2/H3/P
 - `Slug` -> slug bài viết
-- `Mô tả Meta SEO` -> excerpt WordPress
+- `Tiêu đề SEO` -> title WordPress và Rank Math SEO title
+- `Mô tả Meta SEO` -> excerpt WordPress và Rank Math description
 - `Danh mục` -> category
-- `Từ khóa chính` và `Từ khóa phụ đã phủ thêm` -> tags
+- `Từ khóa chính` và `Từ khóa phụ đã phủ thêm` -> tags và Rank Math focus keyword
+
+## Rank Math SEO fields
+
+App gửi các field SEO sau vào WordPress REST API:
+
+- `meta.rank_math_title`
+- `meta.rank_math_description`
+- `meta.rank_math_focus_keyword`
+
+WordPress/Rank Math thường không cho ghi các post meta này qua REST API nếu site chưa đăng ký `show_in_rest`.
+Nếu ô Tiêu đề SEO, Thẻ mô tả hoặc Từ khóa chính trong Rank Math vẫn trống sau khi đăng, cài plugin hỗ trợ trong:
+
+`wordpress/wordpress-auto-poster-rank-math-rest-meta.zip`
+
+Cách dùng nhanh:
+
+1. Vào WordPress Admin -> Plugins -> Add New -> Upload Plugin.
+2. Upload file `wordpress-auto-poster-rank-math-rest-meta.zip`.
+3. Cài và kích hoạt plugin.
+4. Chạy lại app. Nếu bài đã tồn tại, app sẽ cập nhật SEO meta cho bài trùng thay vì bỏ qua hoàn toàn.
 
 ## Quy ước ảnh local
 

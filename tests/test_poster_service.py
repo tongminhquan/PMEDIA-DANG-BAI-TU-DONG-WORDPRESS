@@ -11,9 +11,12 @@ from wp_auto_poster_gui.core.poster_service import publish_posts
 class FakeClient:
     def __init__(self):
         self.created = []
+        self.updated = []
 
-    def check_duplicate_by_title(self, title: str) -> bool:
-        return title == "Duplicate"
+    def find_post_by_title(self, title: str):
+        if title == "Duplicate":
+            return {"id": 99, "link": "https://example.com/duplicate"}
+        return None
 
     def upload_media_from_path(self, path: Path) -> UploadedMedia:
         return UploadedMedia(100 + len(str(path)), f"https://cdn.example.com/{path.name}", path.name)
@@ -25,13 +28,17 @@ class FakeClient:
         self.created.append((post, content, featured_media_id))
         return {"link": f"https://example.com/{post.row_number}"}
 
+    def update_post_seo(self, post_id: int, post: Post):
+        self.updated.append((post_id, post))
+        return {"link": f"https://example.com/existing/{post_id}"}
+
 
 class PosterServiceTest(unittest.TestCase):
-    def test_publishes_with_local_images_and_skips_duplicates(self) -> None:
+    def test_publishes_with_local_images_and_updates_duplicate_seo(self) -> None:
         fake = FakeClient()
         posts = [
             Post(2, "First", "<p>A</p><p>B</p>", ma_bai="bai01"),
-            Post(3, "Duplicate", "C", ma_bai="bai02"),
+            Post(3, "Duplicate", "C", ma_bai="bai02", slug="duplicate", focus_keywords=["keyword"]),
         ]
         config = WordPressConfig("https://example.com", "u", "p")
 
@@ -47,9 +54,11 @@ class PosterServiceTest(unittest.TestCase):
                 client_factory=lambda _: fake,
             )
 
-        self.assertEqual([result.status for result in results], ["success", "skipped"])
+        self.assertEqual([result.status for result in results], ["success", "success"])
         self.assertEqual(orphans, [])
         self.assertEqual(len(fake.created), 1)
+        self.assertEqual(len(fake.updated), 1)
+        self.assertEqual(fake.updated[0][0], 99)
         self.assertIn("<img", fake.created[0][1])
         self.assertIsNotNone(fake.created[0][2])
 

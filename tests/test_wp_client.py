@@ -37,13 +37,40 @@ class WordPressClientTest(unittest.TestCase):
             title="Title",
             content="<p>Body</p>",
             slug="custom-slug",
+            seo_title="SEO Title",
             meta_description="Meta description",
+            focus_keywords=["main keyword", "secondary keyword"],
         )
 
         client.create_post(post, post.content)
 
         self.assertEqual(client.last_payload["slug"], "custom-slug")
         self.assertEqual(client.last_payload["excerpt"], "Meta description")
+        self.assertEqual(client.last_payload["meta"]["rank_math_title"], "SEO Title")
+        self.assertEqual(client.last_payload["meta"]["rank_math_description"], "Meta description")
+        self.assertEqual(
+            client.last_payload["meta"]["rank_math_focus_keyword"],
+            "main keyword, secondary keyword",
+        )
+
+    def test_update_post_seo_sends_rank_math_meta(self) -> None:
+        client = PayloadClient()
+        post = Post(
+            row_number=2,
+            title="Title",
+            content="<p>Body</p>",
+            slug="custom-slug",
+            meta_description="Meta description",
+            focus_keywords=["keyword"],
+        )
+
+        client.update_post_seo(123, post)
+
+        self.assertEqual(client.last_payload["slug"], "custom-slug")
+        self.assertEqual(client.last_payload["excerpt"], "Meta description")
+        self.assertEqual(client.last_payload["meta"]["rank_math_title"], "Title")
+        self.assertEqual(client.last_payload["meta"]["rank_math_description"], "Meta description")
+        self.assertEqual(client.last_payload["meta"]["rank_math_focus_keyword"], "keyword")
 
 
 if __name__ == "__main__":

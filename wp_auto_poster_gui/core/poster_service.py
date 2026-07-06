@@ -56,10 +56,31 @@ def publish_posts(
             post.status = options.default_status
 
         try:
-            if options.skip_duplicates and getattr(client, "check_duplicate_by_title")(post.title):
-                results.append(PostResult(post.row_number, post.title, "skipped", error="Duplicate title"))
-                progress(f"Skipped duplicate: {post.title}")
-                continue
+            if options.skip_duplicates:
+                duplicate_post = _find_duplicate_post(client, post.title)
+                if duplicate_post:
+                    if options.dry_run:
+                        results.append(PostResult(post.row_number, post.title, "success", link="dry-run-update"))
+                        progress(f"Would update duplicate SEO fields: {post.title}")
+                        continue
+                    duplicate_id = duplicate_post.get("id")
+                    if duplicate_id is not None and hasattr(client, "update_post_seo"):
+                        payload = getattr(client, "update_post_seo")(int(duplicate_id), post)
+                        link = _post_link(payload) or _post_link(duplicate_post)
+                        results.append(
+                            PostResult(
+                                post.row_number,
+                                post.title,
+                                "success",
+                                link=link,
+                                error="Updated existing duplicate SEO fields",
+                            )
+                        )
+                        progress(f"Updated duplicate SEO fields: {post.title}")
+                        continue
+                    results.append(PostResult(post.row_number, post.title, "skipped", error="Duplicate title"))
+                    progress(f"Skipped duplicate: {post.title}")
+                    continue
 
             matched = image_matches.get(post.ma_bai or "", None)
             featured_media_id: int | None = None
@@ -92,6 +113,23 @@ def publish_posts(
             progress(f"Failed row {post.row_number}: {exc}")
 
     return results, orphan_files
+
+
+def _find_duplicate_post(client: object, title: str) -> dict | None:
+    if hasattr(client, "find_post_by_title"):
+        return getattr(client, "find_post_by_title")(title)
+    if getattr(client, "check_duplicate_by_title")(title):
+        return {"id": None}
+    return None
+
+
+def _post_link(payload: object) -> str | None:
+    if not isinstance(payload, dict):
+        return None
+    link = payload.get("link")
+    if isinstance(link, str):
+        return link
+    return None
 
 
 def publish_from_excel(

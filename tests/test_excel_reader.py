@@ -43,9 +43,11 @@ class ExcelReaderTest(unittest.TestCase):
         self.assertEqual(posts[0].title, "Thang Máy Gia Đình")
         self.assertIn("<h3>Mục 1</h3>", posts[0].content)
         self.assertEqual(posts[0].slug, "thang-may-gia-dinh")
+        self.assertEqual(posts[0].seo_title, "Thang Máy Gia Đình")
         self.assertEqual(posts[0].meta_description, "Mô tả ngắn")
         self.assertEqual(posts[0].category, "Tin Tức")
         self.assertEqual(posts[0].tags, ["thang máy gia đình", "thang máy kính", "thang máy mini"])
+        self.assertEqual(posts[0].focus_keywords, ["thang máy gia đình", "thang máy kính", "thang máy mini"])
 
 
 if __name__ == "__main__":

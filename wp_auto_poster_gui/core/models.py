@@ -20,7 +20,9 @@ class Post:
     publish_date: str | None = None
     ma_bai: str | None = None
     slug: str | None = None
+    seo_title: str | None = None
     meta_description: str | None = None
+    focus_keywords: list[str] = field(default_factory=list)
 
 
 @dataclass

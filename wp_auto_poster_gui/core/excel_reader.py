@@ -30,6 +30,7 @@ COLUMN_ALIASES = {
     "publish_date": {"publish date", "publish_date", "ngay dang", "lich dang"},
     "ma_bai": {"ma bai", "ma_bai", "id bai", "code"},
     "slug": {"slug", "duong dan", "duong dan tinh"},
+    "seo_title": {"seo title", "tieu de seo", "rank math title"},
     "meta_description": {"meta description", "mo ta meta", "mo ta meta seo", "meta seo"},
 }
 
@@ -90,6 +91,7 @@ def read_posts_from_excel(
         primary_keyword = _clean(row.get(column_map.get("primary_keyword")))
         if primary_keyword:
             tags = _dedupe([primary_keyword, *tags])
+        focus_keywords = tags.copy()
 
         posts.append(
             Post(
@@ -103,7 +105,9 @@ def read_posts_from_excel(
                 publish_date=_clean(row.get(column_map.get("publish_date"))),
                 ma_bai=_clean(row.get(column_map.get("ma_bai"))),
                 slug=_clean(row.get(column_map.get("slug"))),
+                seo_title=_clean(row.get(column_map.get("seo_title"))) or title,
                 meta_description=_clean(row.get(column_map.get("meta_description"))),
+                focus_keywords=focus_keywords,
             )
         )
 
