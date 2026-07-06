@@ -14,6 +14,7 @@ class ScheduleConfig:
     image_folder: str = ""
     frequency: str = "daily"
     time: str = "09:00"
+    run_at: str = ""
     weekday: str = "mon"
     cron_expression: str = ""
     max_images_per_post: int = 5
@@ -75,6 +76,8 @@ class SchedulerService:
         self.config.last_run_at = datetime.now().isoformat(timespec="seconds")
         try:
             self.config.last_result = job_callback() or "Completed"
+            if self.config.frequency == "once":
+                self.config.enabled = False
         except Exception as exc:
             self.config.last_result = f"Failed: {exc}"
             raise
@@ -83,7 +86,13 @@ class SchedulerService:
 
     def _build_trigger(self):
         from apscheduler.triggers.cron import CronTrigger
+        from apscheduler.triggers.date import DateTrigger
 
+        if self.config.frequency == "once":
+            run_at = _parse_run_at(self.config.run_at)
+            if run_at <= datetime.now():
+                raise ValueError("Scheduled run time must be in the future")
+            return DateTrigger(run_date=run_at)
         hour, minute = _parse_time(self.config.time)
         if self.config.frequency == "daily":
             return CronTrigger(hour=hour, minute=minute)
@@ -103,3 +112,12 @@ def _parse_time(value: str) -> tuple[int, int]:
     if not (0 <= parsed[0] <= 23 and 0 <= parsed[1] <= 59):
         raise ValueError("Time must use HH:MM format")
     return parsed
+
+
+def _parse_run_at(value: str) -> datetime:
+    if not value:
+        raise ValueError("Scheduled run time is required")
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError as exc:
+        raise ValueError("Scheduled run time must use ISO format") from exc

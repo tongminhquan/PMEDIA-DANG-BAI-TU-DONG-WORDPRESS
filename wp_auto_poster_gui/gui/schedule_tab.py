@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PySide6.QtCore import QTime, Signal
+from PySide6.QtCore import QDateTime, Qt, QTime, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
+    QDateTimeEdit,
     QSpinBox,
     QTimeEdit,
     QVBoxLayout,
@@ -46,11 +47,18 @@ class ScheduleTab(QWidget):
         self.excel_edit = QLineEdit()
         self.image_folder_edit = QLineEdit()
         self.frequency_combo = QComboBox()
-        self.frequency_combo.addItems(["daily", "weekly", "custom"])
+        self.frequency_combo.addItem("Hằng ngày", "daily")
+        self.frequency_combo.addItem("Hằng tuần", "weekly")
+        self.frequency_combo.addItem("Một lần theo ngày giờ", "once")
+        self.frequency_combo.addItem("Custom cron", "custom")
         self.weekday_combo = QComboBox()
         self.weekday_combo.addItems(["mon", "tue", "wed", "thu", "fri", "sat", "sun"])
         self.time_edit = QTimeEdit()
         self.time_edit.setDisplayFormat("HH:mm")
+        self.run_at_edit = QDateTimeEdit()
+        self.run_at_edit.setDisplayFormat("dd/MM/yyyy HH:mm")
+        self.run_at_edit.setCalendarPopup(True)
+        self.run_at_edit.setDateTime(QDateTime.currentDateTime().addSecs(3600))
         self.cron_edit = QLineEdit()
         self.max_images_spin = QSpinBox()
         self.max_images_spin.setRange(0, 50)
@@ -98,6 +106,7 @@ class ScheduleTab(QWidget):
         form.addRow("Tần suất", self.frequency_combo)
         form.addRow("Thứ", self.weekday_combo)
         form.addRow("Giờ", self.time_edit)
+        form.addRow("Ngày giờ chạy", self.run_at_edit)
         form.addRow("Cron", self.cron_edit)
         form.addRow("Ảnh tối đa mỗi bài", self.max_images_spin)
         form.addRow("Kích thước ảnh", image_size_row)
@@ -119,6 +128,7 @@ class ScheduleTab(QWidget):
             self.frequency_combo,
             self.weekday_combo,
             self.time_edit,
+            self.run_at_edit,
             self.cron_edit,
             self.max_images_spin,
             self.image_size_combo,
@@ -129,6 +139,7 @@ class ScheduleTab(QWidget):
                 signal.connect(self.config_changed.emit)
         self.enabled_check.stateChanged.connect(self.config_changed.emit)
         self.time_edit.timeChanged.connect(self.config_changed.emit)
+        self.run_at_edit.dateTimeChanged.connect(self.config_changed.emit)
         self.max_images_spin.valueChanged.connect(self.config_changed.emit)
         self.image_custom_width_spin.valueChanged.connect(self.config_changed.emit)
         self.frequency_combo.currentTextChanged.connect(self._update_mode_visibility)
@@ -138,11 +149,18 @@ class ScheduleTab(QWidget):
         self.enabled_check.setChecked(config.enabled)
         self.excel_edit.setText(config.excel_path)
         self.image_folder_edit.setText(config.image_folder)
-        self.frequency_combo.setCurrentText(config.frequency)
+        frequency_index = self.frequency_combo.findData(config.frequency)
+        if frequency_index >= 0:
+            self.frequency_combo.setCurrentIndex(frequency_index)
         self.weekday_combo.setCurrentText(config.weekday)
         parsed_time = QTime.fromString(config.time, "HH:mm")
         if parsed_time.isValid():
             self.time_edit.setTime(parsed_time)
+        parsed_run_at = QDateTime.fromString(config.run_at, Qt.ISODate)
+        if parsed_run_at.isValid():
+            self.run_at_edit.setDateTime(parsed_run_at)
+        elif config.frequency == "once":
+            self.run_at_edit.setDateTime(QDateTime.currentDateTime().addSecs(3600))
         self.cron_edit.setText(config.cron_expression)
         self.max_images_spin.setValue(config.max_images_per_post)
 
@@ -170,8 +188,9 @@ class ScheduleTab(QWidget):
             enabled=self.enabled_check.isChecked(),
             excel_path=self.excel_edit.text().strip(),
             image_folder=self.image_folder_edit.text().strip(),
-            frequency=self.frequency_combo.currentText(),
+            frequency=self._frequency(),
             time=self.time_edit.time().toString("HH:mm"),
+            run_at=self.run_at_edit.dateTime().toString(Qt.ISODate),
             weekday=self.weekday_combo.currentText(),
             cron_expression=self.cron_edit.text().strip(),
             max_images_per_post=self.max_images_spin.value(),
@@ -194,9 +213,10 @@ class ScheduleTab(QWidget):
             self.image_folder_edit.setText(path)
 
     def _update_mode_visibility(self) -> None:
-        frequency = self.frequency_combo.currentText()
+        frequency = self._frequency()
         self.weekday_combo.setEnabled(frequency == "weekly")
         self.time_edit.setEnabled(frequency in {"daily", "weekly"})
+        self.run_at_edit.setEnabled(frequency == "once")
         self.cron_edit.setEnabled(frequency == "custom")
 
     def _on_image_size_changed(self) -> None:
@@ -204,6 +224,9 @@ class ScheduleTab(QWidget):
         index = self.image_size_combo.currentIndex()
         size_value = _IMAGE_SIZE_OPTIONS[index][1] if index < len(_IMAGE_SIZE_OPTIONS) else "auto"
         self.image_custom_width_spin.setVisible(size_value == "custom")
+
+    def _frequency(self) -> str:
+        return self.frequency_combo.currentData() or self.frequency_combo.currentText()
 
 
 def _status_text(last_run_at: str | None, last_result: str | None) -> str:

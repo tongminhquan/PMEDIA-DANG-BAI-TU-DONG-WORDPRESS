@@ -50,6 +50,7 @@ from wp_auto_poster_gui.core.image_matcher import match_images_for_posts
 from wp_auto_poster_gui.core.models import PosterOptions, WordPressConfig
 from wp_auto_poster_gui.core.poster_service import export_results_to_excel, publish_from_excel
 from wp_auto_poster_gui.core.scheduler_service import SchedulerService
+from wp_auto_poster_gui.app_info import APP_ICON_PATH, APP_NAME
 from wp_auto_poster_gui.gui.config_dialog import AdvancedSettingsDialog
 from wp_auto_poster_gui.gui.preview_table import fill_preview_table, fill_result_table, orphan_label_text
 from wp_auto_poster_gui.gui.schedule_tab import ScheduleTab
@@ -62,7 +63,9 @@ class MainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("WordPress Auto Poster")
+        self.setWindowTitle(APP_NAME)
+        if APP_ICON_PATH.exists():
+            self.setWindowIcon(QIcon(str(APP_ICON_PATH)))
         self.resize(1180, 760)
 
         self.settings_path = Path("config/settings.json")
@@ -81,7 +84,7 @@ class MainWindow(QMainWindow):
         self._load_settings()
 
         self.tray_icon = create_tray_icon(self, self.windowIcon() or QIcon())
-        self.schedule_message.connect(lambda message: self.tray_icon.showMessage("WordPress Auto Poster", message))
+        self.schedule_message.connect(lambda message: self.tray_icon.showMessage(APP_NAME, message))
         self.schedule_tab.load_config(self.scheduler.config)
         self._apply_schedule()
 
@@ -459,4 +462,4 @@ class MainWindow(QMainWindow):
             return
         event.ignore()
         self.hide()
-        self.tray_icon.showMessage("WordPress Auto Poster", "Ứng dụng vẫn chạy ở khay hệ thống")
+        self.tray_icon.showMessage(APP_NAME, "Ứng dụng vẫn chạy ở khay hệ thống")

@@ -3,9 +3,12 @@ from __future__ import annotations
 from PySide6.QtGui import QAction, QIcon
 from PySide6.QtWidgets import QMenu, QSystemTrayIcon
 
+from wp_auto_poster_gui.app_info import APP_NAME
+
 
 def create_tray_icon(parent, icon: QIcon | None = None) -> QSystemTrayIcon:
     tray = QSystemTrayIcon(icon or parent.windowIcon(), parent)
+    tray.setToolTip(APP_NAME)
     menu = QMenu(parent)
 
     open_action = QAction("Mở ứng dụng", parent)
