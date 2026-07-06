@@ -62,7 +62,7 @@ class ScheduleTab(QWidget):
         self.cron_edit = QLineEdit()
         self.max_images_spin = QSpinBox()
         self.max_images_spin.setRange(0, 50)
-        self.max_images_spin.setValue(5)
+        self.max_images_spin.setValue(2)
 
         # Image display settings
         self.image_size_combo = QComboBox()

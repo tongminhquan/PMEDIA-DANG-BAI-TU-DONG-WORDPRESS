@@ -75,7 +75,7 @@ IMAGE_SIZE_WIDTH: dict[str, int | None] = {
 
 @dataclass
 class PosterOptions:
-    max_images_per_post: int = 5
+    max_images_per_post: int = 2
     default_status: str = "draft"
     skip_duplicates: bool = True
     dry_run: bool = False

@@ -6,14 +6,15 @@ import re
 from .models import MatchedImages
 
 SUPPORTED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
+FEATURED_IMAGE_SUFFIXES = {"bg", "thumb", "thumbnail", "featured"}
 
 
 def match_images_for_posts(
     image_folder: str | Path | None,
     ma_bai_values: list[str],
-    max_images_per_post: int = 5,
+    max_images_per_post: int = 2,
 ) -> tuple[dict[str, MatchedImages], list[Path]]:
-    """Match local image files to post codes using `{ma_bai}_bg` and `{ma_bai}_1` names."""
+    """Match local image files to post codes using `{ma_bai}_bg`/`_thumb` and `{ma_bai}_1` names."""
 
     matches = {code: MatchedImages() for code in ma_bai_values if code}
     if not image_folder:
@@ -38,7 +39,7 @@ def match_images_for_posts(
             if not stem.lower().startswith(prefix.lower()):
                 continue
             suffix = stem[len(prefix) :]
-            if suffix.lower() == "bg":
+            if suffix.lower() in FEATURED_IMAGE_SUFFIXES:
                 matches[code].background = file_path
                 matched = True
                 break

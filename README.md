@@ -69,12 +69,13 @@ Cách dùng nhanh:
 
 ```text
 {ma_bai}_bg.jpg
+{ma_bai}_thumb.jpg
 {ma_bai}_1.jpg
 {ma_bai}_2.png
 {ma_bai}_3.webp
 ```
 
-`_bg` là ảnh đại diện. Các ảnh `_1`, `_2`, ... được upload và chèn đều vào nội dung.
+`_bg`, `_thumb`, `_thumbnail` hoặc `_featured` là ảnh đại diện/thumb. Ảnh này được upload làm ảnh đại diện WordPress và cũng được chèn làm hình đầu tiên trong nội dung bài. Các ảnh `_1`, `_2`, ... được upload và chèn tiếp theo trong nội dung; mặc định app dùng 2 ảnh nội dung sau ảnh thumb.
 
 ## Sử dụng
 

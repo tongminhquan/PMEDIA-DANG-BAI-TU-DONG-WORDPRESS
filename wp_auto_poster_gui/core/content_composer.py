@@ -86,17 +86,29 @@ def compose_content_with_images(
     content: str,
     title: str,
     uploaded_images: list[UploadedMedia],
+    leading_images: list[UploadedMedia] | None = None,
     alignment: str = "aligncenter",
     display_size: str = "auto",
     custom_width: int = 800,
 ) -> str:
     """Insert uploaded content images evenly through the post body."""
 
-    if not uploaded_images:
+    leading_images = leading_images or []
+    all_uploaded_images = [*leading_images, *uploaded_images]
+    if not all_uploaded_images:
         return content
 
-    content, replaced_media_ids = _replace_local_image_sources(content, uploaded_images)
+    content, replaced_media_ids = _replace_local_image_sources(content, all_uploaded_images)
+    leading_images = [media for media in leading_images if media.media_id not in replaced_media_ids]
     uploaded_images = [media for media in uploaded_images if media.media_id not in replaced_media_ids]
+    if leading_images:
+        leading_tags = [
+            _image_html(media, title, alignment, display_size, custom_width)
+            for media in leading_images
+        ]
+        prefix = "\n".join(leading_tags)
+        content = f"{prefix}\n{content.lstrip()}" if content.strip() else prefix
+
     if not uploaded_images:
         return content
 

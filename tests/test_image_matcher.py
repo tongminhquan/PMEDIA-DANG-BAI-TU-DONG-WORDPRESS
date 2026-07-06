@@ -21,6 +21,18 @@ class ImageMatcherTest(unittest.TestCase):
             self.assertEqual([path.name for path in matches["bai02"].content_images], ["bai02_1.jpg"])
             self.assertEqual([path.name for path in orphans], ["other.jpg"])
 
+    def test_matches_thumb_as_featured_image(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            (folder / "bai01_thumb.jpg").write_bytes(b"x")
+            (folder / "bai01_1.jpg").write_bytes(b"x")
+
+            matches, orphans = match_images_for_posts(folder, ["bai01"])
+
+            self.assertEqual(matches["bai01"].background.name, "bai01_thumb.jpg")
+            self.assertEqual([path.name for path in matches["bai01"].content_images], ["bai01_1.jpg"])
+            self.assertEqual(orphans, [])
+
 
 if __name__ == "__main__":
     unittest.main()

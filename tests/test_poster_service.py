@@ -48,6 +48,7 @@ class PosterServiceTest(unittest.TestCase):
             folder = Path(directory)
             (folder / "bai01_bg.jpg").write_bytes(b"x")
             (folder / "bai01_1.jpg").write_bytes(b"x")
+            (folder / "bai01_2.jpg").write_bytes(b"x")
             (folder / "bai02_bg.jpg").write_bytes(b"x")
             (folder / "bai02_1.jpg").write_bytes(b"x")
             results, orphans = publish_posts(
@@ -67,6 +68,10 @@ class PosterServiceTest(unittest.TestCase):
         self.assertIsNotNone(fake.updated[0][3])
         self.assertIn("<img", fake.created[0][1])
         self.assertIsNotNone(fake.created[0][2])
+        created_content = fake.created[0][1]
+        self.assertEqual(created_content.count("<img"), 3)
+        self.assertLess(created_content.index("bai01_bg.jpg"), created_content.index("bai01_1.jpg"))
+        self.assertLess(created_content.index("bai01_1.jpg"), created_content.index("bai01_2.jpg"))
 
     def test_publish_from_excel_auto_detects_adjacent_image_zip(self) -> None:
         try:

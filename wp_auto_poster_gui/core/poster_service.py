@@ -62,13 +62,16 @@ def publish_posts(
 
             matched = image_matches.get(post.ma_bai or "", None)
             featured_media_id: int | None = None
+            featured_media: UploadedMedia | None = None
             if matched and matched.background:
                 media = getattr(client, "upload_media_from_path")(matched.background)
                 featured_media_id = media.media_id
+                featured_media = media
                 progress(f"Uploaded featured image: {matched.background.name} -> {media.source_url}")
             elif post.featured_image_url:
                 media = getattr(client, "upload_media_from_url")(post.featured_image_url)
                 featured_media_id = media.media_id
+                featured_media = media
                 progress(f"Uploaded featured image URL: {media.source_url}")
 
             uploaded_content: list[UploadedMedia] = []
@@ -82,6 +85,7 @@ def publish_posts(
                 post.content,
                 post.title,
                 uploaded_content,
+                leading_images=[featured_media] if featured_media else None,
                 alignment=options.image_alignment,
                 display_size=options.image_display_size,
                 custom_width=options.image_custom_width,
