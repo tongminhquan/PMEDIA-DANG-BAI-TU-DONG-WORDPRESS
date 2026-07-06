@@ -52,6 +52,29 @@ class WordPressClientTest(unittest.TestCase):
             client.last_payload["meta"]["rank_math_focus_keyword"],
             "main keyword, secondary keyword",
         )
+        self.assertNotIn("tags", client.last_payload)
+
+    def test_update_post_includes_content_featured_media_and_rank_math_meta(self) -> None:
+        client = PayloadClient()
+        post = Post(
+            row_number=2,
+            title="Title",
+            content="<p>Body</p>",
+            slug="custom-slug",
+            seo_title="SEO Title",
+            meta_description="Meta description",
+            focus_keywords=["keyword"],
+        )
+
+        client.update_post(123, post, '<p>Body</p><p><img src="https://example.com/image.jpg" /></p>', 55)
+
+        self.assertEqual(client.last_payload["content"], '<p>Body</p><p><img src="https://example.com/image.jpg" /></p>')
+        self.assertEqual(client.last_payload["featured_media"], 55)
+        self.assertEqual(client.last_payload["meta"]["rank_math_title"], "SEO Title")
+        self.assertEqual(client.last_payload["meta"]["rank_math_description"], "Meta description")
+        self.assertEqual(client.last_payload["meta"]["rank_math_focus_keyword"], "keyword")
+        self.assertEqual(client.last_payload["meta"]["rank_math_permalink"], "custom-slug")
+        self.assertNotIn("status", client.last_payload)
 
     def test_update_post_seo_sends_rank_math_meta(self) -> None:
         client = PayloadClient()

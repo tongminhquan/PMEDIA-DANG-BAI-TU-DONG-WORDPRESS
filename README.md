@@ -36,7 +36,12 @@ App cũng tự nhận sheet `Bài SEO HTML` với cột tiếng Việt:
 - `Tiêu đề SEO` -> title WordPress và Rank Math SEO title
 - `Mô tả Meta SEO` -> excerpt WordPress và Rank Math description
 - `Danh mục` -> category
-- `Từ khóa chính` và `Từ khóa phụ đã phủ thêm` -> tags và Rank Math focus keyword
+- `Từ khóa chính` và `Từ khóa phụ đã phủ thêm` -> Rank Math focus keyword
+- `tags`, `tag`, `Thẻ WordPress` -> WordPress tags nếu muốn gắn thẻ thủ công
+
+Nếu HTML trong cột `Nội dung HTML thuần` đã có ảnh dạng `<img src="ma-bai_1.jpg">`,
+app sẽ upload ảnh local lên WordPress rồi thay `src` local bằng URL ảnh trong Media Library.
+Nếu chưa chọn thư mục ảnh, app sẽ tự dò thư mục hoặc file `.zip` ảnh nằm cùng thư mục với file Excel.
 
 ## Rank Math SEO fields
 

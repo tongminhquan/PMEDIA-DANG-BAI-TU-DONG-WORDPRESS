@@ -5,7 +5,14 @@ import re
 
 from .models import IMAGE_SIZE_WIDTH, UploadedMedia
 
+# Match any block-level HTML element: <p>, <h2>, <h3>, <h4>, <ul>, <ol>, <table>, <blockquote>, <div>, <section>
+_BLOCK_TAG_RE = re.compile(
+    r"(<(?:p|h[1-6]|ul|ol|li|table|blockquote|div|section|figure|figcaption)\b[^>]*>.*?</(?:p|h[1-6]|ul|ol|li|table|blockquote|div|section|figure|figcaption)>)",
+    re.IGNORECASE | re.DOTALL,
+)
+
 _P_TAG_RE = re.compile(r"(<p\b[^>]*>.*?</p>)", re.IGNORECASE | re.DOTALL)
+_IMG_SRC_RE = re.compile(r'(<img\b[^>]*?\bsrc=["\'])([^"\']+)(["\'][^>]*>)', re.IGNORECASE)
 
 
 def _image_html(
@@ -43,13 +50,36 @@ def _split_paragraphs(content: str) -> tuple[list[str], str]:
     if not stripped:
         return [], "plain"
 
-    html_parts = [part for part in _P_TAG_RE.split(content) if part]
-    p_segments = [part for part in html_parts if _P_TAG_RE.fullmatch(part)]
-    if p_segments:
+    # Try block-level HTML elements first (broader than just <p>)
+    html_parts = [part for part in _BLOCK_TAG_RE.split(content) if part]
+    block_segments = [part for part in html_parts if _BLOCK_TAG_RE.fullmatch(part)]
+    if block_segments:
         return html_parts, "html"
 
+    # Fallback: plain text split by double newlines
     plain_segments = [segment.strip() for segment in re.split(r"\n\s*\n", content) if segment.strip()]
     return plain_segments, "plain"
+
+
+def _replace_local_image_sources(content: str, uploaded_images: list[UploadedMedia]) -> tuple[str, set[int]]:
+    filename_to_media = {
+        media.filename.lower(): media
+        for media in uploaded_images
+        if media.filename
+    }
+    used_media_ids: set[int] = set()
+
+    def replace(match: re.Match[str]) -> str:
+        prefix, src, suffix = match.groups()
+        filename = src.rsplit("/", 1)[-1].rsplit("\\", 1)[-1].split("?", 1)[0].lower()
+        media = filename_to_media.get(filename)
+        if not media:
+            return match.group(0)
+        used_media_ids.add(media.media_id)
+        escaped_src = html.escape(media.source_url, quote=True)
+        return f"{prefix}{escaped_src}{suffix}"
+
+    return _IMG_SRC_RE.sub(replace, content), used_media_ids
 
 
 def compose_content_with_images(
@@ -65,6 +95,11 @@ def compose_content_with_images(
     if not uploaded_images:
         return content
 
+    content, replaced_media_ids = _replace_local_image_sources(content, uploaded_images)
+    uploaded_images = [media for media in uploaded_images if media.media_id not in replaced_media_ids]
+    if not uploaded_images:
+        return content
+
     segments, mode = _split_paragraphs(content)
     image_tags = [
         _image_html(media, title, alignment, display_size, custom_width)
@@ -77,7 +112,8 @@ def compose_content_with_images(
 
     paragraph_indexes: list[int]
     if mode == "html":
-        paragraph_indexes = [i for i, part in enumerate(segments) if _P_TAG_RE.fullmatch(part)]
+        # Insert after any block element, not just <p>
+        paragraph_indexes = [i for i, part in enumerate(segments) if _BLOCK_TAG_RE.fullmatch(part)]
     else:
         paragraph_indexes = list(range(len(segments)))
 

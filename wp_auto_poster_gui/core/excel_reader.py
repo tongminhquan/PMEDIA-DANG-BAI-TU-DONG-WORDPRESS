@@ -24,8 +24,9 @@ COLUMN_ALIASES = {
     "content": {"content", "noi dung", "noi dung html", "noi dung html thuan"},
     "featured_image_url": {"featured image url", "featured_image_url", "anh dai dien", "url anh dai dien"},
     "category": {"category", "danh muc"},
-    "tags": {"tags", "tag", "tu khoa phu", "tu khoa phu da phu them"},
+    "tags": {"tags", "tag", "the", "the wordpress", "wordpress tags"},
     "primary_keyword": {"tu khoa chinh", "keyword chinh", "main keyword"},
+    "secondary_keywords": {"tu khoa phu", "tu khoa phu da phu them", "secondary keywords"},
     "status": {"status", "trang thai"},
     "publish_date": {"publish date", "publish_date", "ngay dang", "lich dang"},
     "ma_bai": {"ma bai", "ma_bai", "id bai", "code"},
@@ -89,9 +90,14 @@ def read_posts_from_excel(
 
         tags = _parse_tags(row.get(column_map.get("tags")))
         primary_keyword = _clean(row.get(column_map.get("primary_keyword")))
+        secondary_keywords = _parse_tags(row.get(column_map.get("secondary_keywords")))
+
+        # Build focus_keywords from primary + secondary keywords
+        focus_parts: list[str] = []
         if primary_keyword:
-            tags = _dedupe([primary_keyword, *tags])
-        focus_keywords = tags.copy()
+            focus_parts.append(primary_keyword)
+        focus_parts.extend(secondary_keywords)
+        focus_keywords = _dedupe(focus_parts)
 
         posts.append(
             Post(

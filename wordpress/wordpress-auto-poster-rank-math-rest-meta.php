@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: WordPress Auto Poster - Rank Math REST Meta
- * Description: Exposes Rank Math SEO title, description, and focus keyword fields to the WordPress REST API for WordPress Auto Poster.
- * Version: 1.0.0
+ * Description: Exposes Rank Math SEO title, description, focus keyword, and permalink fields to the WordPress REST API for WordPress Auto Poster.
+ * Version: 1.1.1
  * Author: WordPress Auto Poster
  */
 
@@ -16,6 +16,7 @@ add_action('init', function () {
         'rank_math_title' => 'sanitize_text_field',
         'rank_math_description' => 'sanitize_textarea_field',
         'rank_math_focus_keyword' => 'sanitize_text_field',
+        'rank_math_permalink' => 'sanitize_text_field',
     );
 
     foreach ($post_types as $post_type) {

@@ -24,6 +24,16 @@ class ContentComposerTest(unittest.TestCase):
     def test_returns_original_without_images(self) -> None:
         self.assertEqual(compose_content_with_images("A", "Demo", []), "A")
 
+    def test_replaces_existing_local_image_sources_without_duplicates(self) -> None:
+        content = '<p>A</p><p><img src="bai01_1.jpg" alt="Alt"></p><p>B</p>'
+        images = [UploadedMedia(11, "https://example.com/uploads/bai01_1.jpg", "bai01_1.jpg")]
+
+        output = compose_content_with_images(content, "Demo", images)
+
+        self.assertIn('src="https://example.com/uploads/bai01_1.jpg"', output)
+        self.assertNotIn('src="bai01_1.jpg"', output)
+        self.assertEqual(output.count("<img"), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

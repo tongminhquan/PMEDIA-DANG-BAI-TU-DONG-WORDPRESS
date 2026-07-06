@@ -102,11 +102,53 @@ class WordPressClient:
         return self.find_post_by_title(title) is not None
 
     def create_post(self, post: Post, content: str, featured_media_id: int | None = None) -> dict[str, Any]:
+        payload = self._build_post_payload(post, content, featured_media_id, include_status=True)
+
+        last_error: Exception | None = None
+        for attempt in range(1, self.config.retry_count + 1):
+            try:
+                return self._request("POST", "posts", json=payload).json()
+            except Exception as exc:
+                last_error = exc
+                if attempt < self.config.retry_count:
+                    time.sleep(min(2 * attempt, 10))
+        raise WordPressClientError(str(last_error))
+
+    def update_post(
+        self,
+        post_id: int,
+        post: Post,
+        content: str | None = None,
+        featured_media_id: int | None = None,
+    ) -> dict[str, Any]:
+        payload = self._build_post_payload(post, content, featured_media_id, include_status=False)
+        if not payload:
+            return {}
+
+        last_error: Exception | None = None
+        for attempt in range(1, self.config.retry_count + 1):
+            try:
+                return self._request("POST", f"posts/{post_id}", json=payload).json()
+            except Exception as exc:
+                last_error = exc
+                if attempt < self.config.retry_count:
+                    time.sleep(min(2 * attempt, 10))
+        raise WordPressClientError(str(last_error))
+
+    def _build_post_payload(
+        self,
+        post: Post,
+        content: str | None = None,
+        featured_media_id: int | None = None,
+        include_status: bool = True,
+    ) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "title": post.title,
-            "content": content,
-            "status": post.status or "draft",
         }
+        if content is not None:
+            payload["content"] = content
+        if include_status:
+            payload["status"] = post.status or "draft"
         if post.slug:
             payload["slug"] = post.slug
         if post.meta_description:
@@ -123,37 +165,10 @@ class WordPressClient:
         if post.tags:
             payload["tags"] = [self.get_or_create_term("tags", tag) for tag in post.tags]
 
-        last_error: Exception | None = None
-        for attempt in range(1, self.config.retry_count + 1):
-            try:
-                return self._request("POST", "posts", json=payload).json()
-            except Exception as exc:
-                last_error = exc
-                if attempt < self.config.retry_count:
-                    time.sleep(min(2 * attempt, 10))
-        raise WordPressClientError(str(last_error))
+        return payload
 
     def update_post_seo(self, post_id: int, post: Post) -> dict[str, Any]:
-        payload: dict[str, Any] = {}
-        if post.slug:
-            payload["slug"] = post.slug
-        if post.meta_description:
-            payload["excerpt"] = post.meta_description
-        seo_meta = _rank_math_meta(post)
-        if seo_meta:
-            payload["meta"] = seo_meta
-        if not payload:
-            return {}
-
-        last_error: Exception | None = None
-        for attempt in range(1, self.config.retry_count + 1):
-            try:
-                return self._request("POST", f"posts/{post_id}", json=payload).json()
-            except Exception as exc:
-                last_error = exc
-                if attempt < self.config.retry_count:
-                    time.sleep(min(2 * attempt, 10))
-        raise WordPressClientError(str(last_error))
+        return self.update_post(post_id, post)
 
 
 def _prepare_image_bytes(path: Path, mime_type: str) -> bytes:
@@ -193,8 +208,10 @@ def _rank_math_meta(post: Post) -> dict[str, str]:
         meta["rank_math_title"] = seo_title
     if post.meta_description:
         meta["rank_math_description"] = post.meta_description
-    focus_keywords = post.focus_keywords or post.tags
+    focus_keywords = post.focus_keywords or []
     focus_keyword_text = ", ".join(keyword.strip() for keyword in focus_keywords if keyword.strip())
     if focus_keyword_text:
         meta["rank_math_focus_keyword"] = focus_keyword_text
+    if post.slug:
+        meta["rank_math_permalink"] = post.slug
     return meta
