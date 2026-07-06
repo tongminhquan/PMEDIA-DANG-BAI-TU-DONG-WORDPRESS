@@ -3,17 +3,38 @@ from __future__ import annotations
 import html
 import re
 
-from .models import UploadedMedia
+from .models import IMAGE_SIZE_WIDTH, UploadedMedia
 
 _P_TAG_RE = re.compile(r"(<p\b[^>]*>.*?</p>)", re.IGNORECASE | re.DOTALL)
 
 
-def _image_html(media: UploadedMedia, title: str) -> str:
+def _image_html(
+    media: UploadedMedia,
+    title: str,
+    alignment: str = "aligncenter",
+    display_size: str = "auto",
+    custom_width: int = 800,
+) -> str:
+    """Build an ``<img>`` tag wrapped in ``<p>`` with configurable alignment and size."""
+
     alt = html.escape(title, quote=True)
     src = html.escape(media.source_url, quote=True)
+    css_class = f"wp-image-{media.media_id} {alignment}"
+
+    # Build width / style attributes based on display_size
+    attrs = ""
+    if display_size == "full":
+        attrs = ' style="width:100%;height:auto"'
+    elif display_size == "custom":
+        attrs = f' width="{custom_width}"'
+    else:
+        width = IMAGE_SIZE_WIDTH.get(display_size)
+        if width is not None:
+            attrs = f' width="{width}"'
+
     return (
         f'<p><img src="{src}" alt="{alt}" '
-        f'class="wp-image-{media.media_id} aligncenter" /></p>'
+        f'class="{css_class}"{attrs} /></p>'
     )
 
 
@@ -35,6 +56,9 @@ def compose_content_with_images(
     content: str,
     title: str,
     uploaded_images: list[UploadedMedia],
+    alignment: str = "aligncenter",
+    display_size: str = "auto",
+    custom_width: int = 800,
 ) -> str:
     """Insert uploaded content images evenly through the post body."""
 
@@ -42,7 +66,10 @@ def compose_content_with_images(
         return content
 
     segments, mode = _split_paragraphs(content)
-    image_tags = [_image_html(media, title) for media in uploaded_images]
+    image_tags = [
+        _image_html(media, title, alignment, display_size, custom_width)
+        for media in uploaded_images
+    ]
 
     if not segments:
         suffix = "\n".join(image_tags)

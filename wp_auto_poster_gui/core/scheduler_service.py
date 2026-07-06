@@ -17,6 +17,9 @@ class ScheduleConfig:
     weekday: str = "mon"
     cron_expression: str = ""
     max_images_per_post: int = 5
+    image_alignment: str = "aligncenter"
+    image_display_size: str = "auto"
+    image_custom_width: int = 800
     last_run_at: str | None = None
     last_result: str | None = None
 

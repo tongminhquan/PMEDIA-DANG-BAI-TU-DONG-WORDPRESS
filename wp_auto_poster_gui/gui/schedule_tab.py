@@ -19,6 +19,22 @@ from PySide6.QtWidgets import (
 
 from wp_auto_poster_gui.core.scheduler_service import ScheduleConfig
 
+_IMAGE_SIZE_OPTIONS = [
+    ("Tự động", "auto"),
+    ("Nhỏ (300px)", "small"),
+    ("Vừa (600px)", "medium"),
+    ("Lớn (900px)", "large"),
+    ("Toàn chiều rộng", "full"),
+    ("Tùy chỉnh", "custom"),
+]
+
+_IMAGE_ALIGN_OPTIONS = [
+    ("Giữa", "aligncenter"),
+    ("Trái", "alignleft"),
+    ("Phải", "alignright"),
+    ("Không căn", "alignnone"),
+]
+
 
 class ScheduleTab(QWidget):
     config_changed = Signal()
@@ -39,6 +55,22 @@ class ScheduleTab(QWidget):
         self.max_images_spin = QSpinBox()
         self.max_images_spin.setRange(0, 50)
         self.max_images_spin.setValue(5)
+
+        # Image display settings
+        self.image_size_combo = QComboBox()
+        for label, _value in _IMAGE_SIZE_OPTIONS:
+            self.image_size_combo.addItem(label)
+        self.image_custom_width_spin = QSpinBox()
+        self.image_custom_width_spin.setRange(100, 2000)
+        self.image_custom_width_spin.setValue(800)
+        self.image_custom_width_spin.setSuffix(" px")
+        self.image_custom_width_spin.setVisible(False)
+        self.image_size_combo.currentIndexChanged.connect(self._on_image_size_changed)
+
+        self.image_align_combo = QComboBox()
+        for label, _value in _IMAGE_ALIGN_OPTIONS:
+            self.image_align_combo.addItem(label)
+
         self.next_run_label = QLabel("Chưa lên lịch")
         self.last_run_label = QLabel("Chưa chạy")
 
@@ -54,6 +86,11 @@ class ScheduleTab(QWidget):
         image_row.addWidget(self.image_folder_edit)
         image_row.addWidget(image_button)
 
+        image_size_row = QHBoxLayout()
+        image_size_row.addWidget(self.image_size_combo)
+        image_size_row.addWidget(self.image_custom_width_spin)
+        image_size_row.addStretch(1)
+
         form = QFormLayout()
         form.addRow("", self.enabled_check)
         form.addRow("File Excel", excel_row)
@@ -63,6 +100,8 @@ class ScheduleTab(QWidget):
         form.addRow("Giờ", self.time_edit)
         form.addRow("Cron", self.cron_edit)
         form.addRow("Ảnh tối đa mỗi bài", self.max_images_spin)
+        form.addRow("Kích thước ảnh", image_size_row)
+        form.addRow("Căn chỉnh ảnh", self.image_align_combo)
         form.addRow("Lần chạy kế tiếp", self.next_run_label)
         form.addRow("Lần chạy gần nhất", self.last_run_label)
 
@@ -82,6 +121,8 @@ class ScheduleTab(QWidget):
             self.time_edit,
             self.cron_edit,
             self.max_images_spin,
+            self.image_size_combo,
+            self.image_align_combo,
         ]:
             signal = getattr(widget, "textChanged", None) or getattr(widget, "currentTextChanged", None)
             if signal:
@@ -89,6 +130,7 @@ class ScheduleTab(QWidget):
         self.enabled_check.stateChanged.connect(self.config_changed.emit)
         self.time_edit.timeChanged.connect(self.config_changed.emit)
         self.max_images_spin.valueChanged.connect(self.config_changed.emit)
+        self.image_custom_width_spin.valueChanged.connect(self.config_changed.emit)
         self.frequency_combo.currentTextChanged.connect(self._update_mode_visibility)
         self._update_mode_visibility()
 
@@ -103,10 +145,27 @@ class ScheduleTab(QWidget):
             self.time_edit.setTime(parsed_time)
         self.cron_edit.setText(config.cron_expression)
         self.max_images_spin.setValue(config.max_images_per_post)
+
+        # Restore image display settings
+        for i, (_label, value) in enumerate(_IMAGE_SIZE_OPTIONS):
+            if value == config.image_display_size:
+                self.image_size_combo.setCurrentIndex(i)
+                break
+        for i, (_label, value) in enumerate(_IMAGE_ALIGN_OPTIONS):
+            if value == config.image_alignment:
+                self.image_align_combo.setCurrentIndex(i)
+                break
+        self.image_custom_width_spin.setValue(config.image_custom_width)
+        self._on_image_size_changed()
+
         self.last_run_label.setText(_status_text(config.last_run_at, config.last_result))
         self._update_mode_visibility()
 
     def to_config(self) -> ScheduleConfig:
+        size_index = self.image_size_combo.currentIndex()
+        display_size = _IMAGE_SIZE_OPTIONS[size_index][1] if size_index < len(_IMAGE_SIZE_OPTIONS) else "auto"
+        align_index = self.image_align_combo.currentIndex()
+        alignment = _IMAGE_ALIGN_OPTIONS[align_index][1] if align_index < len(_IMAGE_ALIGN_OPTIONS) else "aligncenter"
         return ScheduleConfig(
             enabled=self.enabled_check.isChecked(),
             excel_path=self.excel_edit.text().strip(),
@@ -116,6 +175,9 @@ class ScheduleTab(QWidget):
             weekday=self.weekday_combo.currentText(),
             cron_expression=self.cron_edit.text().strip(),
             max_images_per_post=self.max_images_spin.value(),
+            image_alignment=alignment,
+            image_display_size=display_size,
+            image_custom_width=self.image_custom_width_spin.value(),
         )
 
     def set_next_run(self, value: str | None) -> None:
@@ -136,6 +198,12 @@ class ScheduleTab(QWidget):
         self.weekday_combo.setEnabled(frequency == "weekly")
         self.time_edit.setEnabled(frequency in {"daily", "weekly"})
         self.cron_edit.setEnabled(frequency == "custom")
+
+    def _on_image_size_changed(self) -> None:
+        """Show/hide custom width spin based on selected image size."""
+        index = self.image_size_combo.currentIndex()
+        size_value = _IMAGE_SIZE_OPTIONS[index][1] if index < len(_IMAGE_SIZE_OPTIONS) else "auto"
+        self.image_custom_width_spin.setVisible(size_value == "custom")
 
 
 def _status_text(last_run_at: str | None, last_result: str | None) -> str:

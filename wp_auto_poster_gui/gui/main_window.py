@@ -8,6 +8,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QCloseEvent, QIcon
 from PySide6.QtWidgets import (
     QApplication,
+    QComboBox,
     QFileDialog,
     QFormLayout,
     QGroupBox,
@@ -26,6 +27,23 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+# Mapping from display label to internal value
+_IMAGE_SIZE_OPTIONS = [
+    ("Tự động", "auto"),
+    ("Nhỏ (300px)", "small"),
+    ("Vừa (600px)", "medium"),
+    ("Lớn (900px)", "large"),
+    ("Toàn chiều rộng", "full"),
+    ("Tùy chỉnh", "custom"),
+]
+
+_IMAGE_ALIGN_OPTIONS = [
+    ("Giữa", "aligncenter"),
+    ("Trái", "alignleft"),
+    ("Phải", "alignright"),
+    ("Không căn", "alignnone"),
+]
 
 from wp_auto_poster_gui.core.excel_reader import ExcelValidationError, read_posts_from_excel
 from wp_auto_poster_gui.core.image_matcher import match_images_for_posts
@@ -112,6 +130,22 @@ class MainWindow(QMainWindow):
         self.max_images_spin = QSpinBox()
         self.max_images_spin.setRange(0, 50)
         self.max_images_spin.setValue(5)
+
+        # Image display settings
+        self.image_size_combo = QComboBox()
+        for label, _value in _IMAGE_SIZE_OPTIONS:
+            self.image_size_combo.addItem(label)
+        self.image_custom_width_spin = QSpinBox()
+        self.image_custom_width_spin.setRange(100, 2000)
+        self.image_custom_width_spin.setValue(800)
+        self.image_custom_width_spin.setSuffix(" px")
+        self.image_custom_width_spin.setVisible(False)
+        self.image_size_combo.currentIndexChanged.connect(self._on_image_size_changed)
+
+        self.image_align_combo = QComboBox()
+        for label, _value in _IMAGE_ALIGN_OPTIONS:
+            self.image_align_combo.addItem(label)
+
         excel_button = QPushButton("Chọn Excel")
         excel_button.clicked.connect(self._choose_excel)
         image_button = QPushButton("Chọn thư mục ảnh")
@@ -123,6 +157,11 @@ class MainWindow(QMainWindow):
         image_row = QHBoxLayout()
         image_row.addWidget(self.image_folder_edit)
         image_row.addWidget(image_button)
+
+        image_size_row = QHBoxLayout()
+        image_size_row.addWidget(self.image_size_combo)
+        image_size_row.addWidget(self.image_custom_width_spin)
+        image_size_row.addStretch(1)
 
         preview_button = QPushButton("Preview")
         preview_button.clicked.connect(self._refresh_preview)
@@ -144,6 +183,8 @@ class MainWindow(QMainWindow):
         source_form.addRow("File Excel", excel_row)
         source_form.addRow("Thư mục ảnh", image_row)
         source_form.addRow("Ảnh tối đa mỗi bài", self.max_images_spin)
+        source_form.addRow("Kích thước ảnh", image_size_row)
+        source_form.addRow("Căn chỉnh ảnh", self.image_align_combo)
         source_form.addRow("", run_row)
 
         self.preview_table = QTableWidget()
@@ -226,8 +267,36 @@ class MainWindow(QMainWindow):
             delay_seconds=self.delay_seconds,
         )
 
-    def _poster_options(self, max_images: int | None = None) -> PosterOptions:
-        return PosterOptions(max_images_per_post=max_images if max_images is not None else self.max_images_spin.value())
+    def _on_image_size_changed(self) -> None:
+        """Show/hide custom width spin based on selected image size."""
+        index = self.image_size_combo.currentIndex()
+        size_value = _IMAGE_SIZE_OPTIONS[index][1] if index < len(_IMAGE_SIZE_OPTIONS) else "auto"
+        self.image_custom_width_spin.setVisible(size_value == "custom")
+
+    def _current_image_settings(self) -> tuple[str, str, int]:
+        """Return (image_alignment, image_display_size, image_custom_width) from UI."""
+        size_index = self.image_size_combo.currentIndex()
+        display_size = _IMAGE_SIZE_OPTIONS[size_index][1] if size_index < len(_IMAGE_SIZE_OPTIONS) else "auto"
+        align_index = self.image_align_combo.currentIndex()
+        alignment = _IMAGE_ALIGN_OPTIONS[align_index][1] if align_index < len(_IMAGE_ALIGN_OPTIONS) else "aligncenter"
+        custom_width = self.image_custom_width_spin.value()
+        return alignment, display_size, custom_width
+
+    def _poster_options(self, max_images: int | None = None, schedule_config=None) -> PosterOptions:
+        if schedule_config is not None:
+            return PosterOptions(
+                max_images_per_post=max_images if max_images is not None else self.max_images_spin.value(),
+                image_alignment=schedule_config.image_alignment,
+                image_display_size=schedule_config.image_display_size,
+                image_custom_width=schedule_config.image_custom_width,
+            )
+        alignment, display_size, custom_width = self._current_image_settings()
+        return PosterOptions(
+            max_images_per_post=max_images if max_images is not None else self.max_images_spin.value(),
+            image_alignment=alignment,
+            image_display_size=display_size,
+            image_custom_width=custom_width,
+        )
 
     def _test_connection(self) -> None:
         config = self._current_config()
@@ -314,7 +383,7 @@ class MainWindow(QMainWindow):
             schedule.excel_path,
             schedule.image_folder or None,
             config,
-            self._poster_options(schedule.max_images_per_post),
+            self._poster_options(schedule.max_images_per_post, schedule_config=schedule),
         )
         success = sum(1 for result in results if result.status == "success")
         summary = f"Đăng thành công {success}/{len(results)} bài"
@@ -340,14 +409,32 @@ class MainWindow(QMainWindow):
         self.retry_count = int(data.get("retry_count", 3))
         self.timeout_seconds = int(data.get("timeout_seconds", 30))
 
+        # Restore image display settings
+        saved_size = data.get("image_display_size", "auto")
+        for i, (_label, value) in enumerate(_IMAGE_SIZE_OPTIONS):
+            if value == saved_size:
+                self.image_size_combo.setCurrentIndex(i)
+                break
+        saved_align = data.get("image_alignment", "aligncenter")
+        for i, (_label, value) in enumerate(_IMAGE_ALIGN_OPTIONS):
+            if value == saved_align:
+                self.image_align_combo.setCurrentIndex(i)
+                break
+        self.image_custom_width_spin.setValue(int(data.get("image_custom_width", 800)))
+        self._on_image_size_changed()
+
     def _save_settings(self) -> None:
         self.settings_path.parent.mkdir(parents=True, exist_ok=True)
+        alignment, display_size, custom_width = self._current_image_settings()
         data = {
             "site_url": self.site_url_edit.text().strip(),
             "username": self.username_edit.text().strip(),
             "delay_seconds": self.delay_seconds,
             "retry_count": self.retry_count,
             "timeout_seconds": self.timeout_seconds,
+            "image_alignment": alignment,
+            "image_display_size": display_size,
+            "image_custom_width": custom_width,
         }
         self.settings_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
         self._log("Đã lưu cấu hình không gồm password")

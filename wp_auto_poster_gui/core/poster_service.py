@@ -96,7 +96,14 @@ def publish_posts(
                 for image_path in matched.content_images:
                     uploaded_content.append(getattr(client, "upload_media_from_path")(image_path))
 
-            content = compose_content_with_images(post.content, post.title, uploaded_content)
+            content = compose_content_with_images(
+                post.content,
+                post.title,
+                uploaded_content,
+                alignment=options.image_alignment,
+                display_size=options.image_display_size,
+                custom_width=options.image_custom_width,
+            )
             if options.dry_run:
                 results.append(PostResult(post.row_number, post.title, "success", link="dry-run"))
                 continue

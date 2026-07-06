@@ -60,9 +60,25 @@ class WordPressConfig:
     delay_seconds: float = 0.0
 
 
+ImageAlignment = Literal["aligncenter", "alignleft", "alignright", "alignnone"]
+ImageDisplaySize = Literal["auto", "small", "medium", "large", "full", "custom"]
+
+IMAGE_SIZE_WIDTH: dict[str, int | None] = {
+    "auto": None,
+    "small": 300,
+    "medium": 600,
+    "large": 900,
+    "full": None,
+    "custom": None,
+}
+
+
 @dataclass
 class PosterOptions:
     max_images_per_post: int = 5
     default_status: str = "draft"
     skip_duplicates: bool = True
     dry_run: bool = False
+    image_alignment: str = "aligncenter"
+    image_display_size: str = "auto"
+    image_custom_width: int = 800
