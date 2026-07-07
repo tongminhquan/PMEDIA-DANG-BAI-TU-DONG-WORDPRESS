@@ -1,0 +1,26 @@
+QUY ƯỚC ĐẶT TÊN HÌNH ẢNH CHO PMEDIA-ĐĂNG BÀI TỰ ĐỘNG WORDPRESS
+
+1. Ảnh đại diện/thumb:
+   {ma_bai}_bg.jpg
+   {ma_bai}_thumb.jpg
+   {ma_bai}_thumbnail.png
+   {ma_bai}_featured.webp
+
+2. Ảnh nội dung trong bài:
+   {ma_bai}_1.jpg
+   {ma_bai}_2.png
+   {ma_bai}_3.webp
+
+3. Ví dụ với ma_bai = thong-cong-bien-hoa:
+   thong-cong-bien-hoa_bg.jpg
+   thong-cong-bien-hoa_1.jpg
+   thong-cong-bien-hoa_2.jpg
+
+4. Đuôi file được hỗ trợ:
+   .jpg, .jpeg, .png, .webp
+
+5. Lưu ý:
+   - ma_bai trong Excel phải trùng phần đầu tên file ảnh.
+   - Dùng dấu gạch dưới _ sau ma_bai.
+   - Không đặt khoảng trắng hoặc tiếng Việt có dấu trong ma_bai.
+   - File không khớp ma_bai sẽ hiện cảnh báo trong preview.
