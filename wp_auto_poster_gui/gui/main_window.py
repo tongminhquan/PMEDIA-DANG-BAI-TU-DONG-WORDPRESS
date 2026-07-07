@@ -49,7 +49,7 @@ _IMAGE_ALIGN_OPTIONS = [
 from wp_auto_poster_gui.core.excel_reader import ExcelValidationError, read_posts_from_excel
 from wp_auto_poster_gui.core.image_matcher import match_images_for_posts
 from wp_auto_poster_gui.core.models import PosterOptions, WordPressConfig
-from wp_auto_poster_gui.core.poster_service import export_results_to_excel, publish_from_excel
+from wp_auto_poster_gui.core.poster_service import export_links_to_source_excel, publish_from_excel
 from wp_auto_poster_gui.core.scheduler_service import SchedulerService
 from wp_auto_poster_gui.app_info import APP_ICON_PATH, APP_NAME
 from wp_auto_poster_gui.gui.config_dialog import AdvancedSettingsDialog
@@ -350,7 +350,7 @@ class MainWindow(QMainWindow):
         result_layout = QVBoxLayout(result_box)
         self.result_table = QTableWidget()
         self.result_table.setAlternatingRowColors(True)
-        report_button = QPushButton("📊 Xuất báo cáo Excel")
+        report_button = QPushButton("📊 Xuất Excel gốc + link")
         report_button.clicked.connect(self._export_report)
         result_layout.addWidget(self.result_table)
         result_layout.addWidget(report_button)
@@ -449,7 +449,7 @@ class MainWindow(QMainWindow):
         self.stop_button = QPushButton("Dừng")
         self.stop_button.setEnabled(False)
         self.stop_button.clicked.connect(self._stop_publish)
-        report_button = QPushButton("Xuất báo cáo Excel")
+        report_button = QPushButton("Xuất Excel gốc + link")
         report_button.clicked.connect(self._export_report)
 
         run_row = QHBoxLayout()
@@ -643,15 +643,43 @@ class MainWindow(QMainWindow):
         self.stop_button.setEnabled(False)
         success = sum(1 for result in self.results if result.status == "success")
         self._log(f"Hoàn tất: {success}/{len(self.results)} thành công")
+        self._auto_export_source_link_excel()
 
     def _export_report(self) -> None:
         if not self.results:
             QMessageBox.information(self, "Chưa có kết quả", "Chưa có kết quả để xuất.")
             return
-        path, _ = QFileDialog.getSaveFileName(self, "Xuất báo cáo", "wordpress_post_report.xlsx", "Excel (*.xlsx)")
+        excel_path = self.excel_edit.text().strip()
+        if not excel_path:
+            QMessageBox.information(self, "Chưa có file Excel", "Cần chọn file Excel gốc trước khi xuất.")
+            return
+        source = Path(excel_path)
+        default_path = source.with_name(f"{source.stem}_ket_qua_dang_bai.xlsx")
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Xuất Excel gốc kèm link bài viết",
+            str(default_path),
+            "Excel (*.xlsx)",
+        )
         if path:
-            export_results_to_excel(self.results, path)
-            self._log(f"Đã xuất báo cáo: {path}")
+            export_path = self._export_source_link_excel(path)
+            self._log(f"Đã xuất Excel gốc kèm link bài viết: {export_path}")
+
+    def _auto_export_source_link_excel(self) -> None:
+        if not self.results:
+            return
+        try:
+            export_path = self._export_source_link_excel()
+        except Exception as exc:
+            self._log(f"Lỗi xuất Excel gốc kèm link bài viết: {exc}")
+            return
+        self._log(f"Đã tự động xuất Excel gốc kèm link bài viết: {export_path}")
+
+    def _export_source_link_excel(self, output_path: str | Path | None = None) -> Path:
+        excel_path = self.excel_edit.text().strip()
+        if not excel_path:
+            raise RuntimeError("Chưa chọn file Excel gốc")
+        return export_links_to_source_excel(excel_path, self.results, output_path)
 
     def _on_schedule_changed(self) -> None:
         self.scheduler.config = self.schedule_tab.to_config()
@@ -679,6 +707,11 @@ class MainWindow(QMainWindow):
         )
         success = sum(1 for result in results if result.status == "success")
         summary = f"Đăng thành công {success}/{len(results)} bài"
+        try:
+            export_path = export_links_to_source_excel(schedule.excel_path, list(results))
+            summary = f"{summary} - Excel: {export_path.name}"
+        except Exception as exc:
+            summary = f"{summary} - lỗi xuất Excel: {exc}"
         self.schedule_message.emit(summary)
         return summary
 

@@ -5,7 +5,8 @@ import tempfile
 import unittest
 from zipfile import ZipFile
 
-from wp_auto_poster_gui.core.models import Post, PosterOptions, UploadedMedia, WordPressConfig
+from wp_auto_poster_gui.core.models import Post, PostResult, PosterOptions, UploadedMedia, WordPressConfig
+from wp_auto_poster_gui.core.poster_service import export_links_to_source_excel
 from wp_auto_poster_gui.core.poster_service import publish_posts
 from wp_auto_poster_gui.core.poster_service import publish_from_excel
 
@@ -116,6 +117,74 @@ class PosterServiceTest(unittest.TestCase):
         self.assertEqual(len(fake.created), 1)
         self.assertIn("<img", fake.created[0][1])
         self.assertIsNotNone(fake.created[0][2])
+
+    def test_export_links_to_source_excel_appends_adjacent_link_column(self) -> None:
+        try:
+            from openpyxl import Workbook, load_workbook
+        except ImportError:
+            self.skipTest("openpyxl is not installed")
+
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            source_path = folder / "posts.xlsx"
+            output_path = folder / "posts_with_links.xlsx"
+
+            workbook = Workbook()
+            worksheet = workbook.active
+            worksheet.title = "Bài SEO HTML"
+            worksheet.append(["Tiêu đề SEO", "Nội dung HTML thuần", "Slug"])
+            worksheet.append(["Bài 1", "<p>A</p>", "bai-1"])
+            worksheet.append(["Bài 2", "<p>B</p>", "bai-2"])
+            workbook.save(source_path)
+
+            exported = export_links_to_source_excel(
+                source_path,
+                [
+                    PostResult(2, "Bài 1", "success", link="https://example.com/bai-1"),
+                    PostResult(3, "Bài 2", "failed", error="Lỗi đăng"),
+                ],
+                output_path,
+            )
+
+            exported_workbook = load_workbook(exported)
+            exported_sheet = exported_workbook["Bài SEO HTML"]
+
+            self.assertEqual(exported, output_path)
+            self.assertEqual(exported_sheet.cell(row=1, column=4).value, "Link bài viết")
+            self.assertEqual(exported_sheet.cell(row=2, column=4).value, "https://example.com/bai-1")
+            self.assertEqual(exported_sheet.cell(row=2, column=4).hyperlink.target, "https://example.com/bai-1")
+            self.assertIsNone(exported_sheet.cell(row=3, column=4).value)
+
+            original_workbook = load_workbook(source_path)
+            self.assertEqual(original_workbook["Bài SEO HTML"].max_column, 3)
+
+    def test_export_links_to_source_excel_reuses_existing_link_column(self) -> None:
+        try:
+            from openpyxl import Workbook, load_workbook
+        except ImportError:
+            self.skipTest("openpyxl is not installed")
+
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            source_path = folder / "posts.xlsx"
+            output_path = folder / "posts_with_links.xlsx"
+
+            workbook = Workbook()
+            worksheet = workbook.active
+            worksheet.title = "Bài SEO HTML"
+            worksheet.append(["Tiêu đề SEO", "Nội dung HTML thuần", "Link bài viết"])
+            worksheet.append(["Bài 1", "<p>A</p>", ""])
+            workbook.save(source_path)
+
+            export_links_to_source_excel(
+                source_path,
+                [PostResult(2, "Bài 1", "success", link="https://example.com/bai-1")],
+                output_path,
+            )
+
+            exported_sheet = load_workbook(output_path)["Bài SEO HTML"]
+            self.assertEqual(exported_sheet.max_column, 3)
+            self.assertEqual(exported_sheet.cell(row=2, column=3).value, "https://example.com/bai-1")
 
 
 if __name__ == "__main__":

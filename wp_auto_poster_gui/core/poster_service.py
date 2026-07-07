@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from copy import copy
+from datetime import datetime
 import tempfile
 from pathlib import Path
 import time
@@ -8,7 +10,7 @@ from typing import Callable, Iterable
 from zipfile import ZipFile
 
 from .content_composer import compose_content_with_images
-from .excel_reader import read_posts_from_excel
+from .excel_reader import REQUIRED_COLUMNS, _build_column_map, _normalize_label, read_posts_from_excel
 from .image_matcher import SUPPORTED_IMAGE_EXTENSIONS, match_images_for_posts
 from .models import Post, PostResult, PosterOptions, ProgressCallback, UploadedMedia, WordPressConfig
 
@@ -321,3 +323,86 @@ def export_results_to_excel(results: list[PostResult], output_path: str | Path) 
         ]
     )
     frame.to_excel(output_path, index=False)
+
+
+def export_links_to_source_excel(
+    source_path: str | Path,
+    results: list[PostResult],
+    output_path: str | Path | None = None,
+) -> Path:
+    """Copy the original workbook and append post links next to the source data."""
+
+    try:
+        from openpyxl import load_workbook
+        from openpyxl.utils import get_column_letter
+    except ImportError as exc:  # pragma: no cover - depends on environment
+        raise RuntimeError("openpyxl is required to export links into the source Excel file") from exc
+
+    source = Path(source_path)
+    if not source.exists():
+        raise FileNotFoundError(f"Excel file does not exist: {source}")
+
+    output = Path(output_path) if output_path else _default_link_export_path(source)
+    output.parent.mkdir(parents=True, exist_ok=True)
+
+    workbook = load_workbook(source)
+    worksheet = _find_post_worksheet(workbook)
+    link_column = _link_column(worksheet)
+    header_cell = worksheet.cell(row=1, column=link_column)
+    header_cell.value = "Link bài viết"
+
+    if link_column > 1:
+        previous_header = worksheet.cell(row=1, column=link_column - 1)
+        if previous_header.has_style:
+            header_cell._style = copy(previous_header._style)
+        header_cell.font = copy(previous_header.font)
+        header_cell.fill = copy(previous_header.fill)
+        header_cell.border = copy(previous_header.border)
+        header_cell.alignment = copy(previous_header.alignment)
+        header_cell.number_format = previous_header.number_format
+        previous_letter = get_column_letter(link_column - 1)
+        current_letter = get_column_letter(link_column)
+        worksheet.column_dimensions[current_letter].width = max(
+            worksheet.column_dimensions[previous_letter].width or 12,
+            28,
+        )
+
+    for result in results:
+        cell = worksheet.cell(row=result.row_number, column=link_column)
+        cell.value = result.link or ""
+        if result.link:
+            cell.hyperlink = result.link
+            cell.style = "Hyperlink"
+
+    workbook.save(output)
+    return output
+
+
+def _default_link_export_path(source: Path) -> Path:
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return source.with_name(f"{source.stem}_ket_qua_dang_bai_{timestamp}{source.suffix}")
+
+
+def _find_post_worksheet(workbook):
+    worksheets = list(workbook.worksheets)
+    preferred = [
+        worksheet for worksheet in worksheets if "bai seo html" in _normalize_label(worksheet.title)
+    ]
+    for worksheet in [*preferred, *[sheet for sheet in worksheets if sheet not in preferred]]:
+        headers = [cell.value for cell in worksheet[1]]
+        column_map = _build_column_map(headers)
+        if REQUIRED_COLUMNS <= set(column_map):
+            return worksheet
+    if worksheets:
+        return worksheets[0]
+    raise RuntimeError("Workbook does not contain any worksheet")
+
+
+def _link_column(worksheet) -> int:
+    rightmost_header = 0
+    for cell in worksheet[1]:
+        if cell.value not in (None, ""):
+            rightmost_header = cell.column
+            if _normalize_label(cell.value) == "link bai viet":
+                return cell.column
+    return rightmost_header + 1 if rightmost_header else 1
