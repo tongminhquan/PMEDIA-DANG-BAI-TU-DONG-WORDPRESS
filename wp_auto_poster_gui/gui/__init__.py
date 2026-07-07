@@ -1,2 +1,2 @@
-"""PySide6 GUI for WordPress Auto Poster."""
+"""PySide6 GUI for PMEDIA - ĐĂNG BÀI TỰ ĐỘNG WORDPRESS."""
 

@@ -1,4 +1,4 @@
-"""PMEDIA - Đăng bài tự động WordPress desktop application."""
+"""PMEDIA - ĐĂNG BÀI TỰ ĐỘNG WORDPRESS desktop application."""
 
 __all__ = ["__version__"]
 

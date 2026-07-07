@@ -29,7 +29,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='PMEDIA-DangBaiTuDongWordPress',
+    name='PMEDIA-DANG-BAI-TU-DONG-WORDPRESS',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

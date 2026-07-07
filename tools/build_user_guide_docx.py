@@ -115,7 +115,7 @@ def add_header_footer(doc: Document) -> None:
     header = section.header.paragraphs[0]
     header.alignment = WD_ALIGN_PARAGRAPH.RIGHT
     header.text = ""
-    run = header.add_run("PMEDIA - Đăng bài tự động WordPress")
+    run = header.add_run("PMEDIA - ĐĂNG BÀI TỰ ĐỘNG WORDPRESS")
     set_run_font(run, size=9, color=MUTED)
 
     footer = section.footer.paragraphs[0]
@@ -129,7 +129,7 @@ def add_title(doc: Document) -> None:
     title = doc.add_paragraph()
     title.paragraph_format.space_after = Pt(3)
     title.alignment = WD_ALIGN_PARAGRAPH.LEFT
-    run = title.add_run("Hướng dẫn sử dụng PMEDIA - Đăng bài tự động WordPress")
+    run = title.add_run("Hướng dẫn sử dụng PMEDIA - ĐĂNG BÀI TỰ ĐỘNG WORDPRESS")
     set_run_font(run, size=24, bold=True, color=BLUE)
 
     subtitle = doc.add_paragraph()
@@ -152,7 +152,7 @@ def add_intro(doc: Document) -> None:
     doc.add_heading("1. App dùng để làm gì?", level=1)
     add_para(
         doc,
-        "PMEDIA - Đăng bài tự động WordPress là app desktop dùng để đọc file Excel, kiểm tra preview, upload ảnh local "
+        "PMEDIA - ĐĂNG BÀI TỰ ĐỘNG WORDPRESS là app desktop dùng để đọc file Excel, kiểm tra preview, upload ảnh local "
         "vào Media Library và tạo hoặc cập nhật bài viết WordPress qua REST API."
     )
     add_bullets(
@@ -175,7 +175,7 @@ def add_prepare_section(doc: Document) -> None:
         doc,
         ["Thành phần", "Đường dẫn hoặc yêu cầu"],
         [
-            ["File chạy app", r"C:\Users\Admin\OneDrive\Tài liệu\Đăng bài tự động\dist\PMEDIA-DangBaiTuDongWordPress.exe"],
+            ["File chạy app", r"C:\Users\Admin\OneDrive\Tài liệu\Đăng bài tự động\dist\PMEDIA-DANG-BAI-TU-DONG-WORDPRESS.exe"],
             ["File Excel mẫu", r"docs\Mau_Excel_Dang_Bai_SEO_HTML_WordPress.xlsx"],
             ["Thư mục ảnh mẫu", r"docs\mau_ten_hinh_anh"],
             ["Quy ước tên hình", r"docs\Quy_uoc_dat_ten_hinh_anh.txt"],
@@ -335,7 +335,7 @@ def add_manual_publish_section(doc: Document) -> None:
     add_numbers(
         doc,
         [
-            "Mở file PMEDIA-DangBaiTuDongWordPress.exe.",
+            "Mở file PMEDIA-DANG-BAI-TU-DONG-WORDPRESS.exe.",
             "Nhập URL, username và Application Password.",
             "Bấm Kiểm tra kết nối và chờ trạng thái OK.",
             "Chọn file Excel.",

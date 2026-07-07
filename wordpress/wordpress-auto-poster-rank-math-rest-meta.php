@@ -1,9 +1,9 @@
 <?php
 /**
- * Plugin Name: WordPress Auto Poster - Rank Math REST Meta
- * Description: Exposes Rank Math SEO title, description, focus keyword, and permalink fields to the WordPress REST API for WordPress Auto Poster.
+ * Plugin Name: PMEDIA - ĐĂNG BÀI TỰ ĐỘNG WORDPRESS - Rank Math REST Meta
+ * Description: Exposes Rank Math SEO title, description, focus keyword, and permalink fields to the WordPress REST API for PMEDIA - ĐĂNG BÀI TỰ ĐỘNG WORDPRESS.
  * Version: 1.1.1
- * Author: WordPress Auto Poster
+ * Author: PMEDIA
  */
 
 if (!defined('ABSPATH')) {
