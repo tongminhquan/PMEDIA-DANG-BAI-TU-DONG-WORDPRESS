@@ -4,7 +4,7 @@ from pathlib import Path
 import sys
 
 
-APP_NAME = "PMEDIA-Đăng bài tự động wordpress"
+APP_NAME = "PMEDIA - ĐĂNG BÀI TỰ ĐỘNG WORDPRESS"
 
 
 def resource_path(relative_path: str) -> Path:

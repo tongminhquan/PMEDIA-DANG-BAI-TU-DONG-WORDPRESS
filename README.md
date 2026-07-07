@@ -1,6 +1,6 @@
-# WordPress Auto Poster
+# PMEDIA - ĐĂNG BÀI TỰ ĐỘNG WORDPRESS
 
-Desktop app Python để đọc Excel và đăng bài lên WordPress qua REST API. App hỗ trợ ảnh local theo mã bài, preview trước khi đăng, đăng thủ công, lịch tự động và báo cáo kết quả.
+Desktop app Python để đọc Excel và đăng bài lên WordPress qua REST API. App hỗ trợ ảnh local theo mã bài, preview trước khi đăng, đăng thủ công, lịch tự động, xuất Excel kèm link bài viết và lưu lịch sử chạy.
 
 ## Cài đặt
 
