@@ -79,18 +79,26 @@ Cách dùng nhanh:
 
 ## Sử dụng
 
-1. Nhập URL WordPress, username và application password.
-2. Bấm `Kiểm tra kết nối`.
+1. Nhập URL WordPress, username và application password, hoặc chọn nhanh một website trong danh sách `Website đã lưu`.
+2. Bấm `Kiểm tra kết nối`. Khi kết nối thành công, app tự lưu lại website này để lần sau chọn nhanh.
 3. Chọn file Excel.
 4. Chọn thư mục ảnh nếu có.
 5. Bấm `Preview`.
 6. Bấm `Đăng ngay` và xác nhận.
 
-Application password không được lưu vào `config/settings.json`; khi mở lại app cần nhập lại.
+## Lưu nhiều website
+
+App lưu URL, username và application password của từng website vào `config/settings.json` để lần sau không phải nhập lại.
+
+- Bấm `💾 Lưu` hoặc `Kiểm tra kết nối` thành công để lưu website đang nhập.
+- Chọn một mục trong `Website đã lưu` để điền lại thông tin kết nối.
+- Bấm `Xóa website đã lưu` để gỡ website khỏi máy này.
+
+Application password được mã hóa bằng Windows DPAPI theo tài khoản Windows hiện tại nên không lưu ở dạng chữ thường trong file cấu hình. Nếu chép `config/settings.json` sang máy khác hoặc tài khoản Windows khác, app không giải mã được password đã lưu và sẽ yêu cầu nhập lại.
 
 ## Lịch tự động
 
-Tab `Lịch tự động` cho phép chọn Excel, thư mục ảnh, tần suất hàng ngày, hàng tuần hoặc cron. Lịch chỉ chạy khi checkbox `Bật lịch tự động` được bật. Trong phiên hiện tại vẫn cần nhập application password để job có thể đăng bài.
+Tab `Lịch tự động` cho phép chọn Excel, thư mục ảnh, tần suất hàng ngày, hàng tuần hoặc cron. Lịch chỉ chạy khi checkbox `Bật lịch tự động` được bật. Job dùng application password đang có ở tab kết nối; nếu đã lưu website và DPAPI giải mã được, app tự điền sẵn password khi mở nên job chạy được ngay. Nếu ô password đang trống thì cần nhập lại để job có thể đăng bài.
 
 ## Tạo file mẫu
 

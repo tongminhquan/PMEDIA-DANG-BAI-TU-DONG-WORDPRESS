@@ -51,6 +51,7 @@ _IMAGE_ALIGN_OPTIONS = [
 ]
 
 from wp_auto_poster_gui.core.excel_reader import ExcelValidationError, read_posts_from_excel
+from wp_auto_poster_gui.core.credential_store import protect_secret, unprotect_secret
 from wp_auto_poster_gui.core.history_store import RunHistoryStore, current_timestamp
 from wp_auto_poster_gui.core.image_matcher import match_images_for_posts
 from wp_auto_poster_gui.core.models import PosterOptions, WordPressConfig
@@ -129,6 +130,8 @@ class MainWindow(QMainWindow):
         self.website_image_layout_worker: WebsiteImageLayoutUpdateWorker | None = None
         self.connection_worker: ConnectionTestWorker | None = None
         self.website_posts: list[dict] = []
+        self.connection_profiles: list[dict[str, str]] = []
+        self._loading_profile = False
         self.stop_event = Event()
         self._quitting = False
         self._manual_run_started_at: str | None = None
@@ -265,6 +268,16 @@ class MainWindow(QMainWindow):
 
         connection_box = QGroupBox("1. Kết nối WordPress")
         connection_layout = QVBoxLayout(connection_box)
+        profile_row = QHBoxLayout()
+        self.profile_combo = QComboBox()
+        self.profile_combo.addItem("Chưa có website đã lưu", "")
+        self.profile_combo.currentIndexChanged.connect(self._on_profile_selected)
+        delete_profile_button = QPushButton("Xóa website đã lưu")
+        delete_profile_button.clicked.connect(self._delete_current_profile)
+        profile_row.addWidget(QLabel("Website đã lưu:"))
+        profile_row.addWidget(self.profile_combo, 1)
+        profile_row.addWidget(delete_profile_button)
+
         connection_row = QHBoxLayout()
         self.site_url_edit = QLineEdit()
         self.site_url_edit.setPlaceholderText("https://ten-mien-cua-ban.com")
@@ -287,6 +300,7 @@ class MainWindow(QMainWindow):
         connection_row.addWidget(self.password_edit, 3)
         connection_row.addWidget(save_button)
         connection_row.addWidget(test_button)
+        connection_layout.addLayout(profile_row)
         connection_layout.addLayout(connection_row)
         connection_layout.addWidget(self.connection_status)
 
@@ -696,6 +710,91 @@ class MainWindow(QMainWindow):
             self._log(f"Lỗi preview: {exc}")
             return False
 
+    def _on_profile_selected(self, *_args) -> None:
+        if self._loading_profile:
+            return
+        key = self.profile_combo.currentData() if hasattr(self, "profile_combo") else ""
+        profile = self._find_profile(str(key or ""))
+        if profile:
+            self._apply_profile(profile)
+
+    def _apply_profile(self, profile: dict[str, str]) -> None:
+        self.site_url_edit.setText(profile.get("site_url", ""))
+        self.username_edit.setText(profile.get("username", ""))
+        encrypted_password = profile.get("application_password", "")
+        try:
+            password = unprotect_secret(encrypted_password)
+        except Exception:
+            password = ""
+            self.connection_status.setText("Không giải mã được App Password đã lưu. Vui lòng nhập lại rồi bấm Lưu.")
+        self.password_edit.setText(password)
+
+    def _delete_current_profile(self) -> None:
+        key = self.profile_combo.currentData() if hasattr(self, "profile_combo") else ""
+        profile = self._find_profile(str(key or ""))
+        if not profile:
+            QMessageBox.information(self, "Chưa chọn website", "Không có website đã lưu để xóa.")
+            return
+        label = _profile_label(profile)
+        if QMessageBox.question(
+            self,
+            "Xóa website đã lưu",
+            f"Xóa thông tin kết nối đã lưu của {label} khỏi máy này?",
+        ) != QMessageBox.Yes:
+            return
+        self.connection_profiles = [item for item in self.connection_profiles if item.get("key") != key]
+        self._write_settings_data(self._build_settings_payload(current_profile_key=""))
+        self._refresh_profile_combo("")
+        self.connection_status.setText(f"Đã xóa website đã lưu: {label}")
+
+    def _upsert_current_profile(self) -> str | None:
+        site_url = self.site_url_edit.text().strip()
+        username = self.username_edit.text().strip()
+        password = self.password_edit.text().strip()
+        if not site_url or not username:
+            return None
+
+        key = _profile_key(site_url, username)
+        existing = self._find_profile(key)
+        encrypted_password = protect_secret(password) if password else (existing or {}).get("application_password", "")
+        if not encrypted_password:
+            return None
+
+        profile = {
+            "key": key,
+            "site_url": site_url,
+            "username": username,
+            "application_password": encrypted_password,
+        }
+        self.connection_profiles = [item for item in self.connection_profiles if item.get("key") != key]
+        self.connection_profiles.insert(0, profile)
+        return key
+
+    def _find_profile(self, key: str) -> dict[str, str] | None:
+        for profile in self.connection_profiles:
+            if profile.get("key") == key:
+                return profile
+        return None
+
+    def _refresh_profile_combo(self, selected_key: str | None = None) -> None:
+        if not hasattr(self, "profile_combo"):
+            return
+        self._loading_profile = True
+        try:
+            self.profile_combo.clear()
+            if not self.connection_profiles:
+                self.profile_combo.addItem("Chưa có website đã lưu", "")
+                return
+            for profile in self.connection_profiles:
+                self.profile_combo.addItem(_profile_label(profile), profile.get("key", ""))
+            target = selected_key or self.connection_profiles[0].get("key", "")
+            for index in range(self.profile_combo.count()):
+                if self.profile_combo.itemData(index) == target:
+                    self.profile_combo.setCurrentIndex(index)
+                    break
+        finally:
+            self._loading_profile = False
+
     def _current_config(self, show_errors: bool = True) -> WordPressConfig | None:
         site_url = self.site_url_edit.text().strip()
         username = self.username_edit.text().strip()
@@ -968,7 +1067,11 @@ class MainWindow(QMainWindow):
         self.connection_worker.start()
 
     def _on_connection_tested(self, ok: bool, message: str) -> None:
-        self.connection_status.setText(("OK: " if ok else "Lỗi: ") + message)
+        if ok:
+            self._save_settings(silent=True)
+            self.connection_status.setText(f"OK: {message} - đã lưu website này")
+            return
+        self.connection_status.setText("Lỗi: " + message)
 
     def _start_publish(self) -> None:
         if not self._refresh_preview():
@@ -1276,8 +1379,15 @@ class MainWindow(QMainWindow):
             data = json.loads(self.settings_path.read_text(encoding="utf-8"))
         except Exception:
             return
-        self.site_url_edit.setText(data.get("site_url", ""))
-        self.username_edit.setText(data.get("username", ""))
+        self.connection_profiles = _load_profiles_from_settings(data)
+        selected_profile_key = data.get("current_profile_key", "")
+        self._refresh_profile_combo(selected_profile_key)
+        selected_profile = self._find_profile(selected_profile_key) or (self.connection_profiles[0] if self.connection_profiles else None)
+        if selected_profile:
+            self._apply_profile(selected_profile)
+        else:
+            self.site_url_edit.setText(data.get("site_url", ""))
+            self.username_edit.setText(data.get("username", ""))
         self.delay_seconds = int(data.get("delay_seconds", 0))
         self.retry_count = int(data.get("retry_count", 3))
         self.timeout_seconds = int(data.get("timeout_seconds", 30))
@@ -1305,10 +1415,24 @@ class MainWindow(QMainWindow):
         if hasattr(self, "website_image_size_combo"):
             self._on_website_image_size_changed()
 
-    def _save_settings(self) -> None:
+    def _save_settings(self, silent: bool = False) -> None:
         self.settings_path.parent.mkdir(parents=True, exist_ok=True)
+        current_profile_key = self._upsert_current_profile()
+        data = self._build_settings_payload(current_profile_key=current_profile_key)
+        self._write_settings_data(data)
+        self._refresh_profile_combo(current_profile_key)
+        if not silent:
+            if current_profile_key:
+                self._log("Đã lưu website, username và App Password trên máy này")
+            else:
+                self._log("Đã lưu cấu hình")
+
+    def _build_settings_payload(self, current_profile_key: str | None = None) -> dict:
         alignment, display_size, custom_width = self._current_image_settings()
-        data = {
+        selected_key = current_profile_key
+        if selected_key is None and hasattr(self, "profile_combo"):
+            selected_key = str(self.profile_combo.currentData() or "")
+        return {
             "site_url": self.site_url_edit.text().strip(),
             "username": self.username_edit.text().strip(),
             "delay_seconds": self.delay_seconds,
@@ -1318,9 +1442,13 @@ class MainWindow(QMainWindow):
             "image_display_size": display_size,
             "image_custom_width": custom_width,
             "publish_now": self.publish_now_check.isChecked(),
+            "current_profile_key": selected_key or "",
+            "connection_profiles": self.connection_profiles,
         }
+
+    def _write_settings_data(self, data: dict) -> None:
+        self.settings_path.parent.mkdir(parents=True, exist_ok=True)
         self.settings_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-        self._log("Đã lưu cấu hình không gồm password")
 
     def _log(self, message: str) -> None:
         self.log_box.append(message)
@@ -1414,3 +1542,47 @@ def _website_payload_link(payload: object) -> str:
         return ""
     link = payload.get("link")
     return str(link or "")
+
+
+def _load_profiles_from_settings(data: object) -> list[dict[str, str]]:
+    if not isinstance(data, dict):
+        return []
+    profiles: list[dict[str, str]] = []
+    seen: set[str] = set()
+    raw_profiles = data.get("connection_profiles", [])
+    if isinstance(raw_profiles, list):
+        for item in raw_profiles:
+            if not isinstance(item, dict):
+                continue
+            site_url = str(item.get("site_url") or "").strip()
+            username = str(item.get("username") or "").strip()
+            encrypted_password = str(item.get("application_password") or "").strip()
+            if not site_url or not username or not encrypted_password:
+                continue
+            key = str(item.get("key") or _profile_key(site_url, username))
+            if key in seen:
+                continue
+            profiles.append(
+                {
+                    "key": key,
+                    "site_url": site_url,
+                    "username": username,
+                    "application_password": encrypted_password,
+                }
+            )
+            seen.add(key)
+    return profiles
+
+
+def _profile_key(site_url: str, username: str) -> str:
+    normalized_url = site_url.strip().rstrip("/").lower()
+    normalized_username = username.strip().lower()
+    return f"{normalized_url}|{normalized_username}"
+
+
+def _profile_label(profile: dict[str, str]) -> str:
+    site_url = profile.get("site_url", "").strip().rstrip("/")
+    username = profile.get("username", "").strip()
+    if site_url and username:
+        return f"{site_url} ({username})"
+    return site_url or username or "Website đã lưu"
