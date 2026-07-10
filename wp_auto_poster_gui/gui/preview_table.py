@@ -18,6 +18,7 @@ def fill_preview_table(
         "Tiêu đề",
         "Chuyên mục",
         "Tags",
+        "Từ khóa Rank Math",
         "Trạng thái",
         "Ngày đăng",
         "Ảnh nền",
@@ -35,6 +36,7 @@ def fill_preview_table(
             post.title,
             post.category or "",
             ", ".join(post.tags),
+            ", ".join(post.focus_keywords),
             post.status,
             post.publish_date or "",
             featured_status,
@@ -69,3 +71,14 @@ def orphan_label_text(orphan_files: list[Path]) -> str:
     names = ", ".join(path.name for path in orphan_files[:20])
     suffix = "" if len(orphan_files) <= 20 else f" và {len(orphan_files) - 20} file khác"
     return f"⚠ Ảnh không khớp mã bài nào: {names}{suffix}"
+
+
+def keyword_warning_text(posts: list[Post]) -> str:
+    missing_secondary = sum(1 for post in posts if len(post.focus_keywords) < 2)
+    if not missing_secondary:
+        return ""
+    return (
+        f"⚠ {missing_secondary}/{len(posts)} bài chưa có từ khóa phụ. "
+        "Thêm cột 'Từ khóa phụ' trong Excel hoặc ghi các từ khóa cách nhau bằng dấu phẩy, "
+        "chấm phẩy, xuống dòng hoặc dấu |."
+    )

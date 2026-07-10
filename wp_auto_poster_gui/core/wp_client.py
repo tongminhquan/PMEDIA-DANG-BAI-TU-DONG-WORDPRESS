@@ -28,13 +28,29 @@ class WordPressClient:
         self._session = requests.Session()
         self._session.auth = (config.username, config.application_password)
         self._session.headers.update({"User-Agent": "WordPressAutoPosterGUI/0.1"})
+        self._pmedia_seo_endpoint_available: bool | None = None
 
     def _api(self, path: str) -> str:
         return urljoin(self.site_url, f"wp-json/wp/v2/{path.lstrip('/')}")
 
+    def _rest_api(self, namespace: str, path: str) -> str:
+        return urljoin(
+            self.site_url,
+            f"wp-json/{namespace.strip('/')}/{path.lstrip('/')}",
+        )
+
     def _request(self, method: str, path: str, **kwargs: Any):
         kwargs.setdefault("timeout", self.config.timeout_seconds)
         response = self._session.request(method, self._api(path), **kwargs)
+        if response.status_code >= 400:
+            raise WordPressClientError(
+                f"WordPress API error {response.status_code}: {response.text[:500]}"
+            )
+        return response
+
+    def _request_rest(self, method: str, namespace: str, path: str, **kwargs: Any):
+        kwargs.setdefault("timeout", self.config.timeout_seconds)
+        response = self._session.request(method, self._rest_api(namespace, path), **kwargs)
         if response.status_code >= 400:
             raise WordPressClientError(
                 f"WordPress API error {response.status_code}: {response.text[:500]}"
@@ -207,6 +223,21 @@ class WordPressClient:
                     time.sleep(min(2 * attempt, 10))
         raise WordPressClientError(str(last_error))
 
+    def update_post_fields(self, post_id: int, fields: dict[str, Any]) -> dict[str, Any]:
+        """Partially update a post; only the given REST fields are touched."""
+
+        if not fields:
+            return {}
+        last_error: Exception | None = None
+        for attempt in range(1, self.config.retry_count + 1):
+            try:
+                return self._request("POST", f"posts/{post_id}", json=fields).json()
+            except Exception as exc:
+                last_error = exc
+                if attempt < self.config.retry_count:
+                    time.sleep(min(2 * attempt, 10))
+        raise WordPressClientError(str(last_error))
+
     def update_post_status(self, post_id: int, status: str = "publish") -> dict[str, Any]:
         last_error: Exception | None = None
         for attempt in range(1, self.config.retry_count + 1):
@@ -254,6 +285,51 @@ class WordPressClient:
 
     def update_post_seo(self, post_id: int, post: Post) -> dict[str, Any]:
         return self.update_post(post_id, post)
+
+    def sync_rank_math_meta(self, post_id: int, post: Post) -> dict[str, Any]:
+        """Synchronize all Rank Math fields through the optional PMEDIA plugin endpoint."""
+
+        return self.sync_rank_math_fields(
+            post_id,
+            {
+                "seo_title": (post.seo_title or post.title or "").strip(),
+                "meta_description": (post.meta_description or "").strip(),
+                "permalink": (post.slug or "").strip(),
+                "focus_keywords": _rank_math_keywords(post),
+            },
+        )
+
+    def sync_rank_math_fields(self, post_id: int, fields: dict[str, Any]) -> dict[str, Any]:
+        """Send only the given Rank Math fields; omitted keys stay untouched on the website.
+
+        The plugin endpoint requires focus_keywords and overwrites it, so callers
+        must always pass the full effective keyword list.
+        """
+
+        if "focus_keywords" not in fields:
+            raise ValueError("focus_keywords is required by the PMEDIA SEO endpoint")
+        if self._pmedia_seo_endpoint_available is False:
+            return {"supported": False}
+        payload = dict(fields)
+        try:
+            response = self._request_rest(
+                "POST",
+                "pmedia/v1",
+                f"posts/{post_id}/seo",
+                json=payload,
+            ).json()
+        except WordPressClientError as exc:
+            if "error 404" in str(exc).lower():
+                self._pmedia_seo_endpoint_available = False
+                return {
+                    "supported": False,
+                    "warning": "Plugin PMEDIA Rank Math REST Meta chưa được cập nhật lên bản 1.2.0.",
+                }
+            raise
+        self._pmedia_seo_endpoint_available = True
+        if isinstance(response, dict):
+            return {"supported": True, **response}
+        return {"supported": True}
 
 
 def _prepare_image_bytes(path: Path, mime_type: str) -> bytes:
@@ -309,10 +385,27 @@ def _rank_math_meta(post: Post) -> dict[str, str]:
         meta["rank_math_title"] = seo_title
     if post.meta_description:
         meta["rank_math_description"] = post.meta_description
-    focus_keywords = post.focus_keywords or []
-    focus_keyword_text = ", ".join(keyword.strip() for keyword in focus_keywords if keyword.strip())
+    focus_keyword_text = ", ".join(_rank_math_keywords(post))
     if focus_keyword_text:
         meta["rank_math_focus_keyword"] = focus_keyword_text
     if post.slug:
         meta["rank_math_permalink"] = post.slug
     return meta
+
+
+def _rank_math_keywords(post: Post) -> list[str]:
+    explicit = [
+        *([post.primary_keyword] if post.primary_keyword else []),
+        *(post.secondary_keywords or []),
+    ]
+    values = explicit or list(post.focus_keywords or [])
+    seen: set[str] = set()
+    output: list[str] = []
+    for value in values:
+        keyword = str(value or "").strip()
+        key = keyword.casefold()
+        if not keyword or key in seen:
+            continue
+        seen.add(key)
+        output.append(keyword)
+    return output

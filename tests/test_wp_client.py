@@ -54,6 +54,20 @@ class ListPostsClient(WordPressClient):
         return _FakeResponse(payloads.get((status, page), []))
 
 
+class SyncPayloadClient(PayloadClient):
+    def __init__(self):
+        super().__init__()
+        self.sync_payload = None
+        self.sync_namespace = None
+        self.sync_path = None
+
+    def _request_rest(self, method: str, namespace: str, path: str, **kwargs):
+        self.sync_payload = kwargs.get("json")
+        self.sync_namespace = namespace
+        self.sync_path = path
+        return _FakeResponse({"post_id": 123, "keyword_count": 3})
+
+
 class WordPressClientTest(unittest.TestCase):
     def test_create_post_includes_slug_and_excerpt(self) -> None:
         client = PayloadClient()
@@ -78,6 +92,23 @@ class WordPressClientTest(unittest.TestCase):
             "main keyword, secondary keyword",
         )
         self.assertEqual(client.last_payload["tags"], [])
+
+    def test_rank_math_payload_uses_explicit_primary_and_secondary_keywords(self) -> None:
+        client = PayloadClient()
+        post = Post(
+            row_number=2,
+            title="Title",
+            content="<p>Body</p>",
+            primary_keyword="main keyword",
+            secondary_keywords=["secondary one", "secondary two", "secondary one"],
+        )
+
+        client.create_post(post, post.content)
+
+        self.assertEqual(
+            client.last_payload["meta"]["rank_math_focus_keyword"],
+            "main keyword, secondary one, secondary two",
+        )
 
     def test_update_post_includes_content_featured_media_and_rank_math_meta(self) -> None:
         client = PayloadClient()
@@ -129,6 +160,29 @@ class WordPressClientTest(unittest.TestCase):
         self.assertEqual(client.last_path, "posts/123")
         self.assertEqual(client.last_payload, {"content": '<p><img src="https://example.com/image.jpg" /></p>'})
 
+    def test_sync_rank_math_meta_sends_keyword_array_to_pmedia_endpoint(self) -> None:
+        client = SyncPayloadClient()
+        post = Post(
+            row_number=2,
+            title="Title",
+            content="<p>Body</p>",
+            slug="custom-slug",
+            seo_title="SEO Title",
+            meta_description="Meta description",
+            primary_keyword="main keyword",
+            secondary_keywords=["secondary one", "secondary two"],
+        )
+
+        response = client.sync_rank_math_meta(123, post)
+
+        self.assertEqual(response["keyword_count"], 3)
+        self.assertEqual(client.sync_namespace, "pmedia/v1")
+        self.assertEqual(client.sync_path, "posts/123/seo")
+        self.assertEqual(
+            client.sync_payload["focus_keywords"],
+            ["main keyword", "secondary one", "secondary two"],
+        )
+
     def test_update_post_status_only_sends_only_status(self) -> None:
         client = PayloadClient()
 
@@ -145,6 +199,42 @@ class WordPressClientTest(unittest.TestCase):
         self.assertEqual([post["id"] for post in posts], [3, 1, 2])
         self.assertIn(("GET", "posts", {"context": "edit", "status": "draft", "per_page": 1, "page": 1, "orderby": "date", "order": "desc"}), client.calls)
         self.assertIn(("GET", "posts", {"context": "edit", "status": "private", "per_page": 1, "page": 1, "orderby": "date", "order": "desc"}), client.calls)
+
+
+    def test_update_post_fields_sends_only_given_fields(self) -> None:
+        client = PayloadClient()
+
+        client.update_post_fields(123, {"excerpt": "Mô tả", "meta": {"rank_math_description": "Mô tả"}})
+
+        self.assertEqual(client.last_path, "posts/123")
+        self.assertEqual(
+            client.last_payload,
+            {"excerpt": "Mô tả", "meta": {"rank_math_description": "Mô tả"}},
+        )
+
+    def test_update_post_fields_with_empty_dict_skips_request(self) -> None:
+        client = PayloadClient()
+
+        response = client.update_post_fields(123, {})
+
+        self.assertEqual(response, {})
+        self.assertIsNone(client.last_payload)
+
+    def test_sync_rank_math_fields_sends_only_provided_keys(self) -> None:
+        client = SyncPayloadClient()
+
+        client.sync_rank_math_fields(123, {"focus_keywords": ["kw"], "meta_description": "Mô tả"})
+
+        self.assertEqual(client.sync_path, "posts/123/seo")
+        self.assertEqual(client.sync_payload, {"focus_keywords": ["kw"], "meta_description": "Mô tả"})
+        self.assertNotIn("seo_title", client.sync_payload)
+        self.assertNotIn("permalink", client.sync_payload)
+
+    def test_sync_rank_math_fields_requires_focus_keywords(self) -> None:
+        client = SyncPayloadClient()
+
+        with self.assertRaises(ValueError):
+            client.sync_rank_math_fields(123, {"meta_description": "Mô tả"})
 
 
 if __name__ == "__main__":

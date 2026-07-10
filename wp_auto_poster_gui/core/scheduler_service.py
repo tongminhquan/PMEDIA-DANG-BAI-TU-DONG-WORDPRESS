@@ -35,7 +35,7 @@ class SchedulerService:
     def load_config(self) -> ScheduleConfig:
         if not self.config_path.exists():
             return ScheduleConfig()
-        data = json.loads(self.config_path.read_text(encoding="utf-8"))
+        data = json.loads(self.config_path.read_text(encoding="utf-8-sig"))
         return ScheduleConfig(**{**asdict(ScheduleConfig()), **data})
 
     def save_config(self, config: ScheduleConfig | None = None) -> None:

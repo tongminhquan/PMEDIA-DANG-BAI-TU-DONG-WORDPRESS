@@ -12,6 +12,7 @@ from wp_auto_poster_gui.core.poster_service import (
     publish_from_excel,
     publish_website_posts_bulk,
     update_existing_posts_image_layout,
+    update_website_posts_from_excel,
     update_website_posts_image_layout,
 )
 from wp_auto_poster_gui.core.wp_client import WordPressClient
@@ -135,6 +136,7 @@ class BulkPublishWorker(QThread):
 class WebsitePostsLoadWorker(QThread):
     progress = Signal(str)
     completed = Signal(object)
+    failed = Signal(str)
 
     def __init__(self, config: WordPressConfig):
         super().__init__()
@@ -146,7 +148,7 @@ class WebsitePostsLoadWorker(QThread):
             self.completed.emit(posts)
         except Exception as exc:
             self.progress.emit(f"Lỗi: {exc}")
-            self.completed.emit([])
+            self.failed.emit(str(exc))
 
 
 class WebsiteBulkPublishWorker(QThread):
@@ -169,6 +171,38 @@ class WebsiteBulkPublishWorker(QThread):
             results = publish_website_posts_bulk(
                 self.posts,
                 self.config,
+                progress_callback=self.progress.emit,
+                stop_event=self.stop_event,
+            )
+            self.completed.emit(results)
+        except Exception as exc:
+            self.progress.emit(f"Lỗi: {exc}")
+            self.completed.emit([])
+
+
+class WebsiteExcelUpdateWorker(QThread):
+    progress = Signal(str)
+    completed = Signal(object)
+
+    def __init__(
+        self,
+        excel_path: str,
+        config: WordPressConfig,
+        only_fill_missing: bool,
+        stop_event: Event,
+    ):
+        super().__init__()
+        self.excel_path = excel_path
+        self.config = config
+        self.only_fill_missing = only_fill_missing
+        self.stop_event = stop_event
+
+    def run(self) -> None:
+        try:
+            results = update_website_posts_from_excel(
+                self.excel_path,
+                self.config,
+                only_fill_missing=self.only_fill_missing,
                 progress_callback=self.progress.emit,
                 stop_event=self.stop_event,
             )

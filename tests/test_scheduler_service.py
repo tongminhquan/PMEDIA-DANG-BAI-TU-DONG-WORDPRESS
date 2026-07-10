@@ -31,6 +31,16 @@ class SchedulerServiceTest(unittest.TestCase):
             self.assertEqual(loaded.run_at, "2026-07-06T15:30:00")
             self.assertEqual(loaded.weekday, "fri")
 
+    def test_load_config_accepts_utf8_bom(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "schedule.json"
+            path.write_text('{"enabled": true, "excel_path": "posts.xlsx"}', encoding="utf-8-sig")
+
+            loaded = SchedulerService(path).config
+
+            self.assertTrue(loaded.enabled)
+            self.assertEqual(loaded.excel_path, "posts.xlsx")
+
     def test_parse_time_validation(self) -> None:
         self.assertEqual(_parse_time("23:59"), (23, 59))
         with self.assertRaises(ValueError):

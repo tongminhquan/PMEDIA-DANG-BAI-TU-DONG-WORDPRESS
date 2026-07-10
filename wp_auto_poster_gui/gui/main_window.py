@@ -53,6 +53,7 @@ _IMAGE_ALIGN_OPTIONS = [
 from wp_auto_poster_gui.core.excel_reader import ExcelValidationError, read_posts_from_excel
 from wp_auto_poster_gui.core.credential_store import protect_secret, unprotect_secret
 from wp_auto_poster_gui.core.history_store import RunHistoryStore, current_timestamp
+from wp_auto_poster_gui.core.website_post_store import WebsitePostStore
 from wp_auto_poster_gui.core.image_matcher import match_images_for_posts
 from wp_auto_poster_gui.core.models import PosterOptions, WordPressConfig
 from wp_auto_poster_gui.core.poster_service import export_links_to_source_excel, prepare_image_source, publish_from_excel
@@ -60,7 +61,12 @@ from wp_auto_poster_gui.core.scheduler_service import SchedulerService
 from wp_auto_poster_gui.app_info import APP_ICON_PATH, APP_NAME
 from wp_auto_poster_gui.gui.config_dialog import AdvancedSettingsDialog
 from wp_auto_poster_gui.gui.history_tab import HistoryTab
-from wp_auto_poster_gui.gui.preview_table import fill_preview_table, fill_result_table, orphan_label_text
+from wp_auto_poster_gui.gui.preview_table import (
+    fill_preview_table,
+    fill_result_table,
+    keyword_warning_text,
+    orphan_label_text,
+)
 from wp_auto_poster_gui.gui.schedule_tab import ScheduleTab
 from wp_auto_poster_gui.gui.tray_icon import create_tray_icon
 from wp_auto_poster_gui.gui.workers import (
@@ -69,6 +75,7 @@ from wp_auto_poster_gui.gui.workers import (
     ImageLayoutUpdateWorker,
     PosterWorker,
     WebsiteBulkPublishWorker,
+    WebsiteExcelUpdateWorker,
     WebsiteImageLayoutUpdateWorker,
     WebsitePostsLoadWorker,
 )
@@ -121,6 +128,7 @@ class MainWindow(QMainWindow):
         self.settings_path = Path("config/settings.json")
         self.scheduler = SchedulerService("config/schedule.json")
         self.history_store = RunHistoryStore("config/run_history.json")
+        self.website_post_store = WebsitePostStore("config/website_posts.json")
         self.results = []
         self.poster_worker: PosterWorker | None = None
         self.image_layout_worker: ImageLayoutUpdateWorker | None = None
@@ -128,8 +136,10 @@ class MainWindow(QMainWindow):
         self.website_loader_worker: WebsitePostsLoadWorker | None = None
         self.website_bulk_publish_worker: WebsiteBulkPublishWorker | None = None
         self.website_image_layout_worker: WebsiteImageLayoutUpdateWorker | None = None
+        self.website_excel_update_worker: WebsiteExcelUpdateWorker | None = None
         self.connection_worker: ConnectionTestWorker | None = None
         self.website_posts: list[dict] = []
+        self._website_loading_site_url = ""
         self.connection_profiles: list[dict[str, str]] = []
         self._loading_profile = False
         self.stop_event = Event()
@@ -157,7 +167,8 @@ class MainWindow(QMainWindow):
         self.schedule_tab = ScheduleTab()
         self.schedule_tab.config_changed.connect(self._on_schedule_changed)
         tabs.addTab(self.schedule_tab, "⏰ Lịch tự động")
-        self.history_tab = HistoryTab(self.history_store)
+        self.history_tab = HistoryTab(self.history_store, self.website_post_store)
+        self.history_tab.website_refresh_requested.connect(self._load_website_posts)
         tabs.addTab(self.history_tab, "🕘 Lịch sử")
         self.setCentralWidget(tabs)
 
@@ -494,6 +505,30 @@ class MainWindow(QMainWindow):
         website_actions.addWidget(self.website_progress, 1)
         action_layout.addLayout(website_actions)
 
+        excel_update_box = QGroupBox("3. Cập nhật nội dung từ file Excel")
+        excel_update_layout = QVBoxLayout(excel_update_box)
+        excel_file_row = QHBoxLayout()
+        self.website_excel_edit = QLineEdit()
+        self.website_excel_edit.setPlaceholderText(
+            "File Excel có cột ID / Link bài viết / Slug / Tiêu đề để nhận diện bài"
+        )
+        website_excel_button = QPushButton("Chọn Excel")
+        website_excel_button.clicked.connect(self._choose_website_excel)
+        excel_file_row.addWidget(self.website_excel_edit, 1)
+        excel_file_row.addWidget(website_excel_button)
+        excel_update_layout.addLayout(excel_file_row)
+
+        excel_action_row = QHBoxLayout()
+        self.website_fill_missing_check = QCheckBox(
+            "Chỉ bổ sung trường còn thiếu (không ghi đè dữ liệu đã có trên web)"
+        )
+        self.website_fill_missing_check.setChecked(True)
+        self.website_excel_update_button = QPushButton("📥 Cập nhật bài từ Excel")
+        self.website_excel_update_button.clicked.connect(self._start_website_excel_update)
+        excel_action_row.addWidget(self.website_fill_missing_check, 1)
+        excel_action_row.addWidget(self.website_excel_update_button)
+        excel_update_layout.addLayout(excel_action_row)
+
         bottom_row = QHBoxLayout()
         bottom_row.setSpacing(8)
         web_log_box = QGroupBox("Log")
@@ -501,7 +536,7 @@ class MainWindow(QMainWindow):
         self.website_log_box = QTextEdit()
         self.website_log_box.setReadOnly(True)
         web_log_layout.addWidget(self.website_log_box)
-        web_result_box = QGroupBox("3. Kết quả")
+        web_result_box = QGroupBox("4. Kết quả")
         web_result_layout = QVBoxLayout(web_result_box)
         self.website_result_table = QTableWidget()
         self.website_result_table.setAlternatingRowColors(True)
@@ -511,6 +546,7 @@ class MainWindow(QMainWindow):
 
         layout.addWidget(list_box, 5)
         layout.addWidget(action_box)
+        layout.addWidget(excel_update_box)
         layout.addLayout(bottom_row, 3)
         self._fill_website_posts_table()
         return page
@@ -702,7 +738,8 @@ class MainWindow(QMainWindow):
                 if cleanup is not None:
                     cleanup.cleanup()
             fill_preview_table(self.preview_table, posts, matches)
-            self.orphan_label.setText(orphan_label_text(orphan_files))
+            warnings = [orphan_label_text(orphan_files), keyword_warning_text(posts)]
+            self.orphan_label.setText("\n".join(warning for warning in warnings if warning))
             self._log(f"Preview {len(posts)} bài")
             return True
         except (ExcelValidationError, FileNotFoundError, RuntimeError, ValueError) as exc:
@@ -728,6 +765,8 @@ class MainWindow(QMainWindow):
             password = ""
             self.connection_status.setText("Không giải mã được App Password đã lưu. Vui lòng nhập lại rồi bấm Lưu.")
         self.password_edit.setText(password)
+        if hasattr(self, "history_tab"):
+            self.history_tab.show_cached_website(profile.get("site_url", ""))
 
     def _delete_current_profile(self) -> None:
         key = self.profile_combo.currentData() if hasattr(self, "profile_combo") else ""
@@ -850,22 +889,38 @@ class MainWindow(QMainWindow):
         )
 
     def _load_website_posts(self) -> None:
+        if self.website_loader_worker and self.website_loader_worker.isRunning():
+            return
         config = self._current_config()
         if not config:
             return
+        self._website_loading_site_url = config.site_url
         self._set_website_busy(True)
+        self.history_tab.set_website_loading(True, config.site_url)
         self.website_status_label.setText("Đang tải danh sách bài viết...")
         self.website_loader_worker = WebsitePostsLoadWorker(config)
         self.website_loader_worker.progress.connect(self._website_log)
         self.website_loader_worker.completed.connect(self._on_website_posts_loaded)
+        self.website_loader_worker.failed.connect(self._on_website_posts_load_failed)
         self.website_loader_worker.start()
 
     def _on_website_posts_loaded(self, posts) -> None:
         self.website_posts = list(posts)
+        snapshot = self.website_post_store.save_snapshot(
+            self._website_loading_site_url,
+            self.website_posts,
+        )
+        self.history_tab.set_website_snapshot(snapshot)
         self._fill_website_posts_table()
         self._set_website_busy(False)
         self.website_status_label.setText(f"Đã tải {len(self.website_posts)} bài viết.")
         self._website_log(f"Đã nhận diện {len(self.website_posts)} bài viết trên website")
+
+    def _on_website_posts_load_failed(self, message: str) -> None:
+        self._set_website_busy(False)
+        self.website_status_label.setText("Không tải được danh sách bài viết.")
+        self.history_tab.show_cached_website(self._website_loading_site_url)
+        self._website_log(f"Lỗi tải toàn bộ bài viết: {message}")
 
     def _fill_website_posts_table(self) -> None:
         headers = ["Chọn", "ID", "Trạng thái", "Tiêu đề", "Slug", "Link"]
@@ -965,6 +1020,78 @@ class MainWindow(QMainWindow):
         self.website_image_layout_worker.completed.connect(self._on_website_image_layout_update_completed)
         self.website_image_layout_worker.start()
 
+    def _choose_website_excel(self) -> None:
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Chọn file Excel cập nhật bài",
+            self.website_excel_edit.text() or self.excel_edit.text(),
+            "Excel (*.xlsx *.xlsm *.xls)",
+        )
+        if file_path:
+            self.website_excel_edit.setText(file_path)
+
+    def _start_website_excel_update(self) -> None:
+        excel_path = self.website_excel_edit.text().strip()
+        if not excel_path:
+            QMessageBox.warning(self, "Chưa chọn Excel", "Cần chọn file Excel chứa dữ liệu cập nhật bài.")
+            return
+        if not Path(excel_path).exists():
+            QMessageBox.warning(self, "Không tìm thấy file", f"File Excel không tồn tại:\n{excel_path}")
+            return
+        config = self._current_config()
+        if not config:
+            return
+        only_fill_missing = self.website_fill_missing_check.isChecked()
+        if only_fill_missing:
+            confirm_text = (
+                "Ứng dụng sẽ đối chiếu từng dòng Excel với bài trên website (theo ID, link, slug hoặc tiêu đề) "
+                "và CHỈ bổ sung các trường bài đang thiếu (mô tả meta, từ khóa SEO, chuyên mục, tags, ảnh đại diện...). "
+                "Dữ liệu đã có trên web không bị ghi đè."
+            )
+        else:
+            confirm_text = (
+                "CHẾ ĐỘ GHI ĐÈ: mọi ô có dữ liệu trong Excel sẽ thay thế dữ liệu hiện có của bài trên website "
+                "(nội dung, trạng thái, ngày đăng, SEO...). Hãy chắc chắn file Excel là bản đúng."
+            )
+        if QMessageBox.question(self, "Xác nhận cập nhật bài từ Excel", confirm_text) != QMessageBox.Yes:
+            return
+
+        self._manual_run_started_at = current_timestamp()
+        self.stop_event.clear()
+        self._set_website_busy(True, allow_stop=True)
+        self.website_status_label.setText("Đang cập nhật bài từ Excel...")
+        self.website_excel_update_worker = WebsiteExcelUpdateWorker(
+            excel_path,
+            config,
+            only_fill_missing,
+            self.stop_event,
+        )
+        self.website_excel_update_worker.progress.connect(self._website_log)
+        self.website_excel_update_worker.completed.connect(self._on_website_excel_update_completed)
+        self.website_excel_update_worker.start()
+
+    def _on_website_excel_update_completed(self, results) -> None:
+        self.results = list(results)
+        fill_result_table(self.website_result_table, self.results)
+        fill_result_table(self.result_table, self.results)
+        self._set_website_busy(False)
+        success = sum(1 for result in self.results if result.status == "success")
+        self.website_status_label.setText(f"Cập nhật từ Excel xong: {success}/{len(self.results)} thành công.")
+        self._website_log(f"Hoàn tất cập nhật bài từ Excel: {success}/{len(self.results)} thành công")
+        record = self._append_run_history(
+            mode="website_excel_update",
+            results=self.results,
+            excel_path=self.website_excel_edit.text().strip(),
+            image_folder=None,
+            export_path=None,
+            orphan_files=[],
+            started_at=self._manual_run_started_at,
+        )
+        self._manual_run_started_at = None
+        self._website_log(f"Đã lưu lịch sử cập nhật bài từ Excel: {record.finished_at}")
+        if success and self.website_posts:
+            self._load_website_posts()
+
     def _stop_website_bulk_action(self) -> None:
         self.stop_event.set()
         self._website_log("Đã yêu cầu dừng sau bài hiện tại")
@@ -1031,6 +1158,8 @@ class MainWindow(QMainWindow):
         self.website_clear_selection_button.setEnabled(not busy)
         self.website_publish_button.setEnabled(not busy)
         self.website_update_image_button.setEnabled(not busy)
+        if hasattr(self, "website_excel_update_button"):
+            self.website_excel_update_button.setEnabled(not busy)
         self.website_stop_button.setEnabled(busy and allow_stop)
 
     def _website_log(self, message: str) -> None:
@@ -1070,6 +1199,7 @@ class MainWindow(QMainWindow):
         if ok:
             self._save_settings(silent=True)
             self.connection_status.setText(f"OK: {message} - đã lưu website này")
+            self._load_website_posts()
             return
         self.connection_status.setText("Lỗi: " + message)
 
@@ -1376,7 +1506,7 @@ class MainWindow(QMainWindow):
         if not self.settings_path.exists():
             return
         try:
-            data = json.loads(self.settings_path.read_text(encoding="utf-8"))
+            data = json.loads(self.settings_path.read_text(encoding="utf-8-sig"))
         except Exception:
             return
         self.connection_profiles = _load_profiles_from_settings(data)

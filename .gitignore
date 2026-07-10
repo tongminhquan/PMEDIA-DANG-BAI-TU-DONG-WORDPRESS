@@ -10,6 +10,7 @@ dist/
 build_*/
 dist_*/
 release/
+outputs/
 docs/~$*.docx
 config/settings.json
 config/schedule.json

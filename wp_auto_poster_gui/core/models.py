@@ -23,6 +23,30 @@ class Post:
     seo_title: str | None = None
     meta_description: str | None = None
     focus_keywords: list[str] = field(default_factory=list)
+    primary_keyword: str | None = None
+    secondary_keywords: list[str] = field(default_factory=list)
+
+
+@dataclass
+class PostUpdate:
+    """One Excel row used to patch an existing website post. Only cells with data are set."""
+
+    row_number: int
+    post_id: int | None = None
+    link: str | None = None
+    title: str | None = None
+    content: str | None = None
+    featured_image_url: str | None = None
+    category: str | None = None
+    tags: list[str] = field(default_factory=list)
+    status: str | None = None
+    publish_date: str | None = None
+    slug: str | None = None
+    seo_title: str | None = None
+    meta_description: str | None = None
+    focus_keywords: list[str] = field(default_factory=list)
+    primary_keyword: str | None = None
+    secondary_keywords: list[str] = field(default_factory=list)
 
 
 @dataclass

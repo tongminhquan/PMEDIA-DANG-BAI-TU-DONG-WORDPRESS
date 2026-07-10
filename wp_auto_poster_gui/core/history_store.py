@@ -46,7 +46,7 @@ class RunHistoryStore:
         if not self.history_path.exists():
             return []
         try:
-            raw = json.loads(self.history_path.read_text(encoding="utf-8"))
+            raw = json.loads(self.history_path.read_text(encoding="utf-8-sig"))
         except json.JSONDecodeError:
             return []
         if not isinstance(raw, list):

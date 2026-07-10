@@ -36,6 +36,7 @@ def main() -> int:
     add_excel_section(doc)
     add_image_section(doc)
     add_manual_publish_section(doc)
+    add_website_posts_section(doc)
     add_schedule_section(doc)
     add_output_history_section(doc)
     add_troubleshooting_section(doc)
@@ -135,7 +136,7 @@ def add_title(doc: Document) -> None:
     subtitle = doc.add_paragraph()
     subtitle.paragraph_format.space_after = Pt(12)
     run = subtitle.add_run(
-        "Quy trình chuẩn bị Excel, đặt tên hình, kết nối WordPress, đăng bài, hẹn lịch và kiểm tra kết quả"
+        "Quy trình chuẩn bị Excel, đặt tên hình, kết nối WordPress, đăng bài, quản lý bài trên website, hẹn lịch và kiểm tra kết quả"
     )
     set_run_font(run, size=12, color=MUTED)
 
@@ -164,6 +165,9 @@ def add_intro(doc: Document) -> None:
             "Chèn ảnh thumb làm hình đầu tiên trong bài, sau đó tới các ảnh nội dung _1, _2...",
             "Tự xuất bản sao Excel gốc kèm cột Link bài viết sau khi đăng xong.",
             "Lưu lịch sử các lần chạy trong tab Lịch sử.",
+            "Lưu nhiều website WordPress đã kết nối để mở lại app không cần nhập lại.",
+            "Nhận diện toàn bộ bài đang có trên website và thao tác hàng loạt với các bài đã chọn.",
+            "Hỗ trợ xuất bản hàng loạt, sửa kích thước ảnh và căn ảnh cho bài đã đăng.",
             "Hỗ trợ chạy thủ công hoặc hẹn lịch tự động.",
         ],
     )
@@ -182,6 +186,7 @@ def add_prepare_section(doc: Document) -> None:
             ["Tài khoản WordPress", "User có quyền tạo bài viết, upload media, tạo category/tag nếu cần."],
             ["Application Password", "Mật khẩu ứng dụng tạo trong WordPress, không phải mật khẩu đăng nhập thường."],
             ["Plugin Rank Math REST meta", r"wordpress\wordpress-auto-poster-rank-math-rest-meta.zip nếu cần ghi SEO fields Rank Math."],
+            ["Danh sách website đã lưu", r"App tự lưu trong config\settings.json sau khi kết nối OK hoặc bấm Lưu."],
         ],
         [2.1, 4.4],
     )
@@ -242,10 +247,34 @@ def add_connection_section(doc: Document) -> None:
         "kiểm tra username, kiểm tra URL có https:// và kiểm tra plugin bảo mật/hosting có chặn REST API hay không.",
         fill=LIGHT_YELLOW,
     )
-    doc.add_heading("3.2. Cài plugin metadata SEO cho Rank Math", level=2)
+    doc.add_heading("3.2. Lưu website đã kết nối", level=2)
     add_para(
         doc,
-        "Plugin này giúp WordPress REST API cho phép app ghi Tiêu đề SEO, Thẻ mô tả, Từ khóa chính và permalink vào "
+        "App có thể lưu nhiều website WordPress đã kết nối. Sau khi tắt app rồi mở lại, người dùng chỉ cần chọn website "
+        "trong ô Website đã lưu; URL, User và App Password sẽ tự được điền lại."
+    )
+    add_numbers(
+        doc,
+        [
+            "Nhập URL, User và App Password của website.",
+            "Bấm Kiểm tra kết nối. Nếu trạng thái báo OK, app tự lưu website này.",
+            "Có thể bấm Lưu để lưu thủ công thông tin đang nhập.",
+            "Lần sau mở app, website gần nhất sẽ tự được chọn và điền lại.",
+            "Nếu quản lý nhiều website, chọn website cần dùng trong dropdown Website đã lưu.",
+            "Muốn bỏ website khỏi máy, chọn website trong dropdown rồi bấm Xóa website đã lưu.",
+        ],
+    )
+    add_note(
+        doc,
+        "Bảo mật App Password",
+        "App Password được mã hóa bằng Windows DPAPI theo user Windows hiện tại trước khi lưu vào config/settings.json. "
+        "File settings này chỉ nên dùng trên đúng máy/user đã tạo; không nên gửi file config/settings.json cho khách khác.",
+        fill=LIGHT_BLUE,
+    )
+    doc.add_heading("3.3. Cài plugin metadata SEO cho Rank Math", level=2)
+    add_para(
+        doc,
+        "Plugin này giúp WordPress REST API cho phép app ghi Tiêu đề SEO, Thẻ mô tả, Từ khóa chính, toàn bộ từ khóa phụ và permalink vào "
         "Rank Math. Nên cài plugin trước khi chạy đăng bài chính thức, đặc biệt nếu sau khi test các ô Rank Math vẫn "
         "hiện trống trong phần Xem trước trình chỉnh sửa đoạn trích.",
     )
@@ -259,14 +288,15 @@ def add_connection_section(doc: Document) -> None:
             "Bấm Install Now hoặc Cài đặt ngay.",
             "Sau khi cài xong, bấm Activate hoặc Kích hoạt.",
             "Quay lại app PMEDIA, bấm Kiểm tra kết nối rồi đăng thử 1 bài ở trạng thái draft.",
-            "Mở bài draft trong WordPress và kiểm tra Rank Math đã có Tiêu đề SEO, Thẻ mô tả và Từ khóa chính.",
+            "Mở bài draft trong WordPress và kiểm tra Rank Math đã có Tiêu đề SEO, Thẻ mô tả, từ khóa chính và các từ khóa phụ.",
         ],
     )
     add_note(
         doc,
         "Khi nào bắt buộc cài plugin metadata?",
         "Nếu WordPress vẫn tạo được bài nhưng Rank Math không nhận SEO title, mô tả meta hoặc focus keyword, hãy cài "
-        "plugin này rồi chạy lại. Với bài đã tồn tại, app sẽ cập nhật lại metadata SEO khi xử lý bài trùng.",
+        "plugin bản 1.2.0 này rồi chạy lại. Với bài đã tồn tại, app sẽ cập nhật lại metadata SEO khi xử lý bài trùng. "
+        "Nếu website đang dùng bản plugin cũ, hãy hủy kích hoạt/xóa bản cũ rồi tải lại file ZIP mới trong gói bàn giao.",
         fill=LIGHT_BLUE,
     )
 
@@ -290,7 +320,7 @@ def add_excel_section(doc: Document) -> None:
             ["Danh mục", "Tùy chọn", "Category WordPress. App tìm hoặc tạo nếu user có quyền."],
             ["tags", "Tùy chọn", "Thẻ WordPress, tách bằng dấu phẩy."],
             ["Từ khóa chính", "Nên có", "Rank Math focus keyword."],
-            ["Từ khóa phụ đã phủ thêm", "Tùy chọn", "Gộp vào Rank Math focus keyword, tách bằng dấu phẩy."],
+            ["Từ khóa phụ đã phủ thêm", "Tùy chọn", "Gộp vào Rank Math focus keyword; tách bằng dấu phẩy, chấm phẩy, xuống dòng hoặc dấu |."],
             ["status", "Nên có", "draft, publish, future hoặc private. Khuyến nghị dùng draft."],
             ["publish_date", "Tùy chọn", "Ngày đăng ISO, ví dụ 2026-07-10T09:00:00."],
             ["featured_image_url", "Tùy chọn", "URL ảnh đại diện từ internet nếu không dùng ảnh local."],
@@ -303,13 +333,20 @@ def add_excel_section(doc: Document) -> None:
         "App gửi rank_math_title, rank_math_description, rank_math_focus_keyword và rank_math_permalink vào WordPress. "
         "Nếu Rank Math chưa nhận các field này, hãy cài plugin hỗ trợ trong thư mục wordpress của dự án.",
     )
+    add_note(
+        doc,
+        "Kiểm tra từ khóa phụ trước khi đăng",
+        "Preview có cột Từ khóa Rank Math để hiển thị toàn bộ từ khóa sẽ gửi. Nếu file cũ không có cột Từ khóa phụ, "
+        "có thể nhập nhiều giá trị ngay trong cột Từ khóa chính; app lấy giá trị đầu làm từ khóa chính và các giá trị còn lại làm từ khóa phụ. "
+        "Plugin metadata cần được cập nhật lên bản 1.2.0 để dùng endpoint đồng bộ riêng của PMEDIA.",
+    )
     doc.add_heading("4.1. Quy tắc nhập dữ liệu", level=2)
     add_bullets(
         doc,
         [
             "Không để trống Tiêu đề SEO và Nội dung HTML thuần.",
             "Slug nên viết không dấu, dùng dấu gạch ngang, ví dụ thong-cong-bien-hoa.",
-            "Từ khóa phụ, tags nhập bằng dấu phẩy: từ khóa 1, từ khóa 2, từ khóa 3.",
+            "Từ khóa phụ có thể ngăn cách bằng dấu phẩy, chấm phẩy, xuống dòng hoặc dấu |. Tags vẫn là cột riêng của WordPress.",
             "Nếu chưa muốn public, giữ status là draft.",
             "Không chèn ảnh dung lượng quá lớn nếu không cần; app sẽ nén ảnh lớn khi upload.",
             "Sau khi đăng xong, app tự tạo file Excel kết quả với cột Link bài viết ở bên phải dữ liệu gốc.",
@@ -382,8 +419,58 @@ def add_manual_publish_section(doc: Document) -> None:
     )
 
 
+def add_website_posts_section(doc: Document) -> None:
+    doc.add_heading("7. Nhận diện và chỉnh sửa bài đang có trên website", level=1)
+    add_para(
+        doc,
+        "Tab Bài trên web dùng để tải toàn bộ bài viết đang có trong WordPress rồi thao tác hàng loạt trên các bài được chọn. "
+        "Chức năng này không cần file Excel vì app làm việc trực tiếp theo ID bài viết WordPress."
+    )
+    add_numbers(
+        doc,
+        [
+            "Kết nối WordPress thành công ở phần Kết nối WordPress.",
+            "Mở tab Bài trên web.",
+            "Bấm Tải bài từ website để app nhận diện bài publish, draft, pending, future và private.",
+            "Tick chọn từng bài cần xử lý hoặc bấm Chọn tất cả.",
+            "Nếu muốn public các bài nháp, bấm Xuất bản bài đã chọn.",
+            "Nếu muốn sửa hình trong bài đã đăng, chọn Kích thước ảnh và Căn ảnh rồi bấm Sửa cỡ/căn ảnh bài đã chọn.",
+            "Xem kết quả trong bảng Kết quả và kiểm tra lại vài link trên website.",
+        ],
+    )
+    add_table(
+        doc,
+        ["Thao tác", "Tác dụng", "Không thay đổi"],
+        [
+            [
+                "Tải bài từ website",
+                "Lấy danh sách bài viết theo ID, trạng thái, tiêu đề, slug và link.",
+                "Không sửa dữ liệu website.",
+            ],
+            [
+                "Xuất bản bài đã chọn",
+                "Chuyển trạng thái bài đã chọn sang publish.",
+                "Không sửa nội dung, SEO, danh mục, tags hoặc ảnh.",
+            ],
+            [
+                "Sửa cỡ/căn ảnh bài đã chọn",
+                "Cập nhật class căn ảnh và thuộc tính width/style của các thẻ img trong nội dung bài.",
+                "Không sửa chữ, tiêu đề, slug, SEO, danh mục hoặc tags.",
+            ],
+        ],
+        [1.75, 2.65, 2.1],
+    )
+    add_note(
+        doc,
+        "Khi nào dùng tab Bài trên web?",
+        "Dùng khi bài đã tồn tại trong WordPress nhưng đang là draft cần xuất bản, hoặc khi muốn đổi cách hiển thị ảnh "
+        "hàng loạt mà không muốn phụ thuộc file Excel cũ.",
+        fill=LIGHT_YELLOW,
+    )
+
+
 def add_schedule_section(doc: Document) -> None:
-    doc.add_heading("7. Hẹn lịch tự động", level=1)
+    doc.add_heading("8. Hẹn lịch tự động", level=1)
     add_para(
         doc,
         "Tab Lịch tự động cho phép chạy theo ngày, theo tuần, một lần theo ngày giờ hoặc custom cron. Lịch chạy theo thời gian thực của máy."
@@ -408,22 +495,25 @@ def add_schedule_section(doc: Document) -> None:
         [
             "Khi bấm nút X, app thu nhỏ xuống khay hệ thống và lịch vẫn chạy nền.",
             "Muốn thoát hẳn, bấm chuột phải vào icon khay hệ thống rồi chọn Thoát hẳn.",
-            "Application Password không lưu vào settings. Khi mở app lại cần nhập lại password để lịch đăng được bài.",
+            "Nếu đã lưu website kết nối, app tự điền lại Application Password khi mở lại trên cùng máy/user Windows.",
             "Nếu dùng lịch một lần, thời gian chạy phải là thời gian tương lai.",
         ],
     )
 
 
 def add_output_history_section(doc: Document) -> None:
-    doc.add_heading("8. Kết quả, file xuất và lịch sử chạy", level=1)
+    doc.add_heading("9. Kết quả, file xuất và lịch sử chạy", level=1)
     add_table(
         doc,
         ["Chức năng", "Kết quả tạo ra", "Vị trí xem"],
         [
             ["Xuất Excel gốc + link", "Bản sao file Excel gốc có thêm cột Link bài viết ở bên phải dữ liệu.", "Cùng thư mục với Excel gốc hoặc nơi người dùng chọn."],
             ["Bảng Kết quả", "Dòng, tiêu đề, trạng thái, link, ghi chú/lỗi.", "Tab Đăng thủ công."],
+            ["Kết quả bài trên web", "Dòng theo ID bài WordPress, tiêu đề, trạng thái, link và lỗi nếu có.", "Tab Bài trên web."],
             ["Lịch sử chạy", "Thời gian, kiểu chạy, Excel, số thành công/lỗi/bỏ qua, file kết quả, chi tiết từng bài.", "Tab Lịch sử."],
             ["File lịch sử local", "Dữ liệu JSON dùng để app mở lại vẫn xem được lịch sử.", r"config\run_history.json"],
+            ["Toàn bộ bài trên website", "Snapshot gồm ID, trạng thái, ngày đăng/cập nhật, tiêu đề, slug và link của toàn bộ bài WordPress.", "Tab Lịch sử -> Toàn bộ bài trên website."],
+            ["File snapshot website", "Lưu riêng theo từng website, không chứa App Password.", r"config\website_posts.json"],
         ],
         [1.8, 3.25, 1.45],
     )
@@ -434,12 +524,13 @@ def add_output_history_section(doc: Document) -> None:
             "Nếu bài đăng thành công, ô Link bài viết có hyperlink để mở bài phía người dùng.",
             "Nếu bài lỗi hoặc bị bỏ qua, dòng đó vẫn nằm trong lịch sử để kiểm tra nguyên nhân.",
             "config/run_history.json là dữ liệu local, không nên gửi công khai nếu có link website nội bộ.",
+            "Sau khi kết nối thành công, app tự đồng bộ toàn bộ bài. Có thể bấm Đồng bộ toàn bộ bài trong tab Lịch sử để tải lại.",
         ],
     )
 
 
 def add_troubleshooting_section(doc: Document) -> None:
-    doc.add_heading("9. Lỗi thường gặp và cách xử lý", level=1)
+    doc.add_heading("10. Lỗi thường gặp và cách xử lý", level=1)
     add_table(
         doc,
         ["Hiện tượng", "Nguyên nhân thường gặp", "Cách xử lý"],
@@ -450,8 +541,13 @@ def add_troubleshooting_section(doc: Document) -> None:
             ["Preview thiếu bài", "Có dòng trống title/content", "Kiểm tra các dòng trống hoặc ô nội dung bị thiếu."],
             ["Ảnh không lên WordPress", "Tên ảnh không khớp ma_bai hoặc sai thư mục", "Đặt lại tên theo {ma_bai}_bg, {ma_bai}_1, {ma_bai}_2."],
             ["SEO title/meta không hiện trong Rank Math", "Rank Math meta chưa show_in_rest", "Cài plugin wordpress-auto-poster-rank-math-rest-meta.zip."],
+            ["Rank Math chỉ có một từ khóa", "File Excel không có cột Từ khóa phụ hoặc plugin metadata còn cũ", "Thêm cột Từ khóa phụ, kiểm tra cột Từ khóa Rank Math trong Preview và cập nhật plugin metadata bản 1.2.0."],
             ["Bài bị draft", "Cột status là draft", "Đây là khuyến nghị an toàn. Đổi thành publish nếu muốn public ngay."],
-            ["Lịch không chạy", "Chưa tick bật lịch, app đã thoát hẳn hoặc chưa nhập password", "Bật lịch, để app ở khay hệ thống, nhập lại Application Password sau khi mở app."],
+            ["Dropdown Website đã lưu trống", "Chưa bấm Lưu hoặc chưa test kết nối OK", "Nhập đủ URL/User/App Password rồi bấm Kiểm tra kết nối hoặc Lưu."],
+            ["Không giải mã được App Password đã lưu", "File settings được chuyển từ máy/user Windows khác", "Nhập lại App Password trên máy hiện tại rồi bấm Lưu."],
+            ["Tab Bài trên web không tải được bài", "User thiếu quyền hoặc REST API bị chặn", "Kiểm tra quyền user, Application Password và plugin bảo mật/hosting."],
+            ["Lịch sử chưa có toàn bộ bài website", "Chưa đồng bộ hoặc lần tải gần nhất bị lỗi", "Kết nối lại rồi mở Lịch sử -> Toàn bộ bài trên website -> Đồng bộ toàn bộ bài."],
+            ["Lịch không chạy", "Chưa tick bật lịch hoặc app đã thoát hẳn", "Bật lịch, để app ở khay hệ thống và kiểm tra lại cấu hình kết nối đã lưu."],
             ["Không thấy file kết quả", "Xuất Excel lỗi hoặc không có quyền ghi thư mục", "Xem log trong app, chọn nơi xuất khác bằng nút Xuất Excel gốc + link."],
         ],
         [1.7, 2.25, 2.55],
@@ -459,14 +555,16 @@ def add_troubleshooting_section(doc: Document) -> None:
 
 
 def add_safety_section(doc: Document) -> None:
-    doc.add_heading("10. Nguyên tắc an toàn khi đăng hàng loạt", level=1)
+    doc.add_heading("11. Nguyên tắc an toàn khi đăng hàng loạt", level=1)
     add_bullets(
         doc,
         [
             "Luôn chạy thử 1-2 bài ở trạng thái draft trước khi đăng số lượng lớn.",
             "Kiểm tra preview trước khi bấm Đăng ngay.",
             "Không chia sẻ Application Password công khai.",
+            "Không gửi config/settings.json cho người khác vì file này chứa hồ sơ website đã lưu cho máy hiện tại.",
             "Không đóng app bằng Thoát hẳn khi đang đăng bài.",
+            "Trước khi dùng tab Bài trên web để xuất bản hoặc sửa ảnh hàng loạt, nên tick thử 1-2 bài để kiểm tra kết quả.",
             "Sau khi đăng xong, mở vài link trong file Excel kết quả để kiểm tra giao diện người dùng.",
             "Nếu có lỗi ảnh hoặc SEO, sửa Excel/tên ảnh rồi chạy lại. App sẽ cập nhật bài trùng tiêu đề.",
         ],
@@ -474,15 +572,19 @@ def add_safety_section(doc: Document) -> None:
 
 
 def add_quick_reference_section(doc: Document) -> None:
-    doc.add_heading("11. Tóm tắt thao tác nhanh", level=1)
+    doc.add_heading("12. Tóm tắt thao tác nhanh", level=1)
     add_table(
         doc,
         ["Mục tiêu", "Thao tác nhanh"],
         [
             ["Đăng bài có ảnh", "Chọn Excel -> chọn thư mục ảnh -> Preview -> Đăng ngay -> kiểm tra Link bài viết."],
             ["Chỉ kiểm tra dữ liệu", "Chọn Excel -> Preview -> sửa cảnh báo nếu có -> chưa bấm Đăng ngay."],
+            ["Lưu website kết nối", "Nhập URL/User/App Password -> Kiểm tra kết nối OK hoặc bấm Lưu -> lần sau chọn trong Website đã lưu."],
+            ["Xuất bản bài đang có trên web", "Tab Bài trên web -> Tải bài từ website -> tick bài -> Xuất bản bài đã chọn."],
+            ["Sửa ảnh bài đang có trên web", "Tab Bài trên web -> chọn kích thước/căn ảnh -> tick bài -> Sửa cỡ/căn ảnh bài đã chọn."],
             ["Hẹn giờ đăng", "Tab Lịch tự động -> chọn Excel/ảnh -> chọn giờ -> bật lịch -> lưu lịch."],
             ["Xem lần chạy cũ", "Mở tab Lịch sử -> chọn dòng -> xem chi tiết bên dưới."],
+            ["Xem toàn bộ bài website", "Mở tab Lịch sử -> Toàn bộ bài trên website -> Đồng bộ toàn bộ bài."],
             ["Tạo lại file mẫu", "Chạy tools/create_excel_image_template.py để xuất Excel mẫu và ảnh mẫu."],
         ],
         [2.0, 4.5],
@@ -490,7 +592,7 @@ def add_quick_reference_section(doc: Document) -> None:
     add_note(
         doc,
         "Phiên bản tài liệu",
-        f"Cập nhật ngày {datetime.now().strftime('%d/%m/%Y')} theo bản app có xuất Excel kèm link bài viết và lưu lịch sử chạy.",
+        f"Cập nhật ngày {datetime.now().strftime('%d/%m/%Y')} theo bản app có đồng bộ từ khóa phụ Rank Math, lưu website đã kết nối, nhận diện toàn bộ bài trên website, xuất bản/sửa ảnh hàng loạt, xuất Excel kèm link và lưu lịch sử chạy.",
         fill=LIGHT_BLUE,
     )
 

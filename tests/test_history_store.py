@@ -63,6 +63,19 @@ class RunHistoryStoreTest(unittest.TestCase):
 
             self.assertEqual(RunHistoryStore(history_path).load_records(), [])
 
+    def test_load_records_accepts_utf8_bom(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            history_path = Path(directory) / "run_history.json"
+            history_path.write_text(
+                '[{"run_id":"1","mode":"manual","started_at":"2026-07-08T09:00:00","finished_at":"2026-07-08T09:01:00","excel_path":"posts.xlsx"}]',
+                encoding="utf-8-sig",
+            )
+
+            records = RunHistoryStore(history_path).load_records()
+
+            self.assertEqual(len(records), 1)
+            self.assertEqual(records[0].excel_path, "posts.xlsx")
+
 
 if __name__ == "__main__":
     unittest.main()

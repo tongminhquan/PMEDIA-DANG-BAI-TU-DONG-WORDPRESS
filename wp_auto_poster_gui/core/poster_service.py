@@ -10,9 +10,23 @@ from typing import Any, Callable, Iterable
 from zipfile import ZipFile
 
 from .content_composer import compose_content_with_images, rewrite_existing_image_layout
-from .excel_reader import REQUIRED_COLUMNS, _build_column_map, _normalize_label, read_posts_from_excel
+from .excel_reader import (
+    REQUIRED_COLUMNS,
+    _build_column_map,
+    _normalize_label,
+    read_post_updates_from_excel,
+    read_posts_from_excel,
+)
 from .image_matcher import SUPPORTED_IMAGE_EXTENSIONS, match_images_for_posts
-from .models import Post, PostResult, PosterOptions, ProgressCallback, UploadedMedia, WordPressConfig
+from .models import (
+    Post,
+    PostResult,
+    PostUpdate,
+    PosterOptions,
+    ProgressCallback,
+    UploadedMedia,
+    WordPressConfig,
+)
 
 
 ClientFactory = Callable[[WordPressConfig], object]
@@ -102,6 +116,7 @@ def publish_posts(
                     duplicate_id = duplicate_post.get("id")
                     if duplicate_id is not None and hasattr(client, "update_post"):
                         payload = getattr(client, "update_post")(int(duplicate_id), post, content, featured_media_id)
+                        _sync_rank_math_meta(client, int(duplicate_id), post, progress)
                         link = _post_link(payload) or _post_link(duplicate_post)
                         results.append(
                             PostResult(
@@ -116,6 +131,7 @@ def publish_posts(
                         continue
                     if duplicate_id is not None and hasattr(client, "update_post_seo"):
                         payload = getattr(client, "update_post_seo")(int(duplicate_id), post)
+                        _sync_rank_math_meta(client, int(duplicate_id), post, progress)
                         link = _post_link(payload) or _post_link(duplicate_post)
                         results.append(
                             PostResult(
@@ -137,6 +153,9 @@ def publish_posts(
                 continue
 
             payload = getattr(client, "create_post")(post, content, featured_media_id)
+            created_id = _website_post_id(payload)
+            if created_id is not None:
+                _sync_rank_math_meta(client, created_id, post, progress)
             link = payload.get("link") if isinstance(payload, dict) else None
             results.append(PostResult(post.row_number, post.title, "success", link=link))
             progress(f"Posted: {post.title}")
@@ -165,6 +184,30 @@ def _post_link(payload: object) -> str | None:
     if isinstance(link, str):
         return link
     return None
+
+
+def _sync_rank_math_meta(
+    client: object,
+    post_id: int,
+    post: Post,
+    progress: ProgressCallback,
+) -> None:
+    if not hasattr(client, "sync_rank_math_meta"):
+        return
+    keyword_count = len(post.focus_keywords or [])
+    try:
+        response = getattr(client, "sync_rank_math_meta")(post_id, post)
+        if isinstance(response, dict) and response.get("supported") is False:
+            warning = response.get("warning")
+            if warning:
+                progress(f"Cảnh báo: {warning}")
+            return
+        progress(f"Đã đồng bộ Rank Math: {keyword_count} từ khóa cho {post.title}")
+    except Exception as exc:
+        progress(
+            "Cảnh báo: chưa đồng bộ được endpoint Rank Math PMEDIA "
+            f"cho {post.title}: {exc}. App vẫn giữ payload metadata chuẩn của WordPress."
+        )
 
 
 def list_website_posts(
@@ -277,6 +320,239 @@ def update_website_posts_image_layout(
             progress(f"Lỗi sửa ảnh bài #{post_id or index}: {exc}")
 
     return results
+
+
+def update_website_posts_from_excel(
+    excel_path: str | Path,
+    config: WordPressConfig,
+    only_fill_missing: bool = True,
+    progress_callback: ProgressCallback | None = None,
+    stop_event: Event | None = None,
+    client_factory: ClientFactory = _make_client,
+) -> list[PostResult]:
+    """Patch existing website posts with data from an Excel file.
+
+    With only_fill_missing=True (default) an Excel cell is applied only when the
+    website post currently lacks that field, so existing data is never overwritten.
+    """
+
+    progress = progress_callback or _default_progress
+    updates = read_post_updates_from_excel(excel_path)
+    client = client_factory(config)
+    results: list[PostResult] = []
+    mode_text = "chỉ bổ sung trường còn thiếu" if only_fill_missing else "ghi đè theo dữ liệu Excel"
+    progress(f"Đã đọc {len(updates)} dòng từ Excel ({mode_text})")
+
+    for update in updates:
+        if stop_event and stop_event.is_set():
+            progress("Stopped by user")
+            break
+
+        label = update.title or (
+            f"ID {update.post_id}" if update.post_id else update.slug or update.link or f"Dòng {update.row_number}"
+        )
+        progress(f"Đang xử lý dòng {update.row_number}: {label}")
+        try:
+            existing, matched_by = _find_update_target(client, update)
+            if not existing:
+                results.append(
+                    PostResult(update.row_number, label, "skipped", error="Không tìm thấy bài trên website")
+                )
+                progress(f"Không tìm thấy bài trên website: {label}")
+                continue
+
+            post_id = _website_post_id(existing)
+            if post_id is None:
+                results.append(PostResult(update.row_number, label, "failed", error="Bài viết không có ID"))
+                continue
+
+            current = getattr(client, "get_post")(post_id) if hasattr(client, "get_post") else existing
+            if not isinstance(current, dict):
+                current = existing
+            fields, seo_fields, applied = _build_update_fields(
+                client, update, current, only_fill_missing, matched_by
+            )
+            if not fields and not seo_fields:
+                results.append(
+                    PostResult(
+                        post_id,
+                        label,
+                        "skipped",
+                        link=_post_link(current) or _post_link(existing),
+                        error="Bài đã đủ dữ liệu, không có gì cần bổ sung",
+                    )
+                )
+                progress(f"Bài đã đủ dữ liệu: {label}")
+                continue
+
+            payload = getattr(client, "update_post_fields")(post_id, fields) if fields else {}
+            if seo_fields:
+                _sync_rank_math_fields(client, post_id, seo_fields, label, progress)
+            link = _post_link(payload) or _post_link(current) or _post_link(existing)
+            note = "Đã cập nhật: " + ", ".join(applied)
+            results.append(PostResult(post_id, label, "success", link=link, error=note))
+            progress(f"{note} — {label}")
+
+            if config.delay_seconds > 0:
+                time.sleep(config.delay_seconds)
+        except Exception as exc:
+            results.append(PostResult(update.post_id or update.row_number, label, "failed", error=str(exc)))
+            progress(f"Lỗi cập nhật dòng {update.row_number}: {exc}")
+
+    return results
+
+
+def _find_update_target(client: object, update: PostUpdate) -> tuple[dict | None, str]:
+    if update.post_id is not None and hasattr(client, "get_post"):
+        try:
+            found = getattr(client, "get_post")(update.post_id)
+        except Exception:
+            found = None
+        if isinstance(found, dict) and found.get("id") is not None:
+            return found, "id"
+    slug_source = update.slug or update.link
+    if slug_source and hasattr(client, "find_post_by_slug"):
+        found = getattr(client, "find_post_by_slug")(slug_source)
+        if found:
+            return found, "slug"
+    if update.title and hasattr(client, "find_post_by_title"):
+        found = getattr(client, "find_post_by_title")(update.title)
+        if found:
+            return found, "title"
+    return None, ""
+
+
+def _build_update_fields(
+    client: object,
+    update: PostUpdate,
+    current: dict,
+    only_fill_missing: bool,
+    matched_by: str,
+) -> tuple[dict[str, Any], dict[str, Any] | None, list[str]]:
+    fields: dict[str, Any] = {}
+    meta: dict[str, str] = {}
+    applied: list[str] = []
+    overwrite = not only_fill_missing
+    current_meta = current.get("meta") if isinstance(current.get("meta"), dict) else {}
+
+    if update.title and overwrite and matched_by != "title":
+        fields["title"] = update.title
+        applied.append("tiêu đề")
+
+    if update.content and (overwrite or _is_blank(_post_content(current))):
+        fields["content"] = update.content
+        applied.append("nội dung")
+
+    if update.slug and overwrite:
+        fields["slug"] = update.slug
+        applied.append("slug")
+
+    if update.status and overwrite:
+        fields["status"] = update.status
+        applied.append("trạng thái")
+
+    if update.publish_date and overwrite:
+        fields["date"] = update.publish_date
+        applied.append("ngày đăng")
+
+    current_categories = current.get("categories") if isinstance(current.get("categories"), list) else []
+    # Category id 1 is WordPress' built-in default (Uncategorized), so treat it as unset.
+    if update.category and (overwrite or not current_categories or current_categories == [1]):
+        if hasattr(client, "get_or_create_term"):
+            fields["categories"] = [getattr(client, "get_or_create_term")("categories", update.category)]
+            applied.append("chuyên mục")
+
+    current_tags = current.get("tags") if isinstance(current.get("tags"), list) else []
+    if update.tags and (overwrite or not current_tags):
+        if hasattr(client, "get_or_create_term"):
+            fields["tags"] = [getattr(client, "get_or_create_term")("tags", tag) for tag in update.tags]
+            applied.append("tags")
+
+    if update.featured_image_url and (overwrite or not current.get("featured_media")):
+        if hasattr(client, "upload_media_from_url"):
+            media = getattr(client, "upload_media_from_url")(update.featured_image_url)
+            fields["featured_media"] = media.media_id
+            applied.append("ảnh đại diện")
+
+    if update.meta_description and (overwrite or _is_blank(_excerpt_raw(current))):
+        fields["excerpt"] = update.meta_description
+        applied.append("mô tả (excerpt)")
+
+    if update.seo_title and (overwrite or _is_blank(current_meta.get("rank_math_title"))):
+        meta["rank_math_title"] = update.seo_title
+        applied.append("tiêu đề SEO")
+
+    if update.meta_description and (overwrite or _is_blank(current_meta.get("rank_math_description"))):
+        meta["rank_math_description"] = update.meta_description
+        applied.append("mô tả meta SEO")
+
+    if update.focus_keywords and (overwrite or _is_blank(current_meta.get("rank_math_focus_keyword"))):
+        meta["rank_math_focus_keyword"] = ", ".join(update.focus_keywords)
+        applied.append("từ khóa SEO")
+
+    if meta:
+        fields["meta"] = meta
+
+    seo_fields: dict[str, Any] | None = None
+    if meta:
+        if "rank_math_focus_keyword" in meta:
+            effective_keywords = list(update.focus_keywords)
+        else:
+            effective_keywords = _split_keyword_text(current_meta.get("rank_math_focus_keyword"))
+        seo_fields = {"focus_keywords": effective_keywords}
+        if "rank_math_title" in meta:
+            seo_fields["seo_title"] = update.seo_title
+        if "rank_math_description" in meta:
+            seo_fields["meta_description"] = update.meta_description
+
+    return fields, seo_fields, applied
+
+
+def _sync_rank_math_fields(
+    client: object,
+    post_id: int,
+    fields: dict[str, Any],
+    title: str,
+    progress: ProgressCallback,
+) -> None:
+    if not hasattr(client, "sync_rank_math_fields"):
+        return
+    try:
+        response = getattr(client, "sync_rank_math_fields")(post_id, fields)
+        if isinstance(response, dict) and response.get("supported") is False:
+            warning = response.get("warning")
+            if warning:
+                progress(f"Cảnh báo: {warning}")
+            return
+        progress(f"Đã đồng bộ Rank Math cho {title}")
+    except Exception as exc:
+        progress(
+            "Cảnh báo: chưa đồng bộ được endpoint Rank Math PMEDIA "
+            f"cho {title}: {exc}. App vẫn giữ payload metadata chuẩn của WordPress."
+        )
+
+
+def _is_blank(value: object) -> bool:
+    return not str(value or "").strip()
+
+
+def _excerpt_raw(payload: dict) -> str:
+    excerpt = payload.get("excerpt")
+    if isinstance(excerpt, str):
+        return excerpt
+    if isinstance(excerpt, dict):
+        raw = excerpt.get("raw")
+        if raw is not None:
+            return str(raw)
+        # Without context=edit only the auto-generated rendered excerpt exists;
+        # treat it as present so fill-missing mode never overwrites anything real.
+        return str(excerpt.get("rendered") or "")
+    return ""
+
+
+def _split_keyword_text(value: object) -> list[str]:
+    text = str(value or "")
+    return [keyword.strip() for keyword in text.split(",") if keyword.strip()]
 
 
 def _website_post_id(payload: object) -> int | None:

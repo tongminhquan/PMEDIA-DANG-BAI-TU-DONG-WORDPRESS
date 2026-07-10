@@ -13,6 +13,7 @@ from wp_auto_poster_gui.core.poster_service import publish_posts
 from wp_auto_poster_gui.core.poster_service import publish_from_excel
 from wp_auto_poster_gui.core.poster_service import update_existing_posts_image_layout
 from wp_auto_poster_gui.core.poster_service import publish_website_posts_bulk
+from wp_auto_poster_gui.core.poster_service import update_website_posts_from_excel
 from wp_auto_poster_gui.core.poster_service import update_website_posts_image_layout
 
 
@@ -20,6 +21,7 @@ class FakeClient:
     def __init__(self):
         self.created = []
         self.updated = []
+        self.synced = []
 
     def find_post_by_title(self, title: str):
         if title == "Duplicate":
@@ -34,11 +36,15 @@ class FakeClient:
 
     def create_post(self, post: Post, content: str, featured_media_id: int | None = None):
         self.created.append((post, content, featured_media_id))
-        return {"link": f"https://example.com/{post.row_number}"}
+        return {"id": post.row_number, "link": f"https://example.com/{post.row_number}"}
 
     def update_post(self, post_id: int, post: Post, content: str, featured_media_id: int | None = None):
         self.updated.append((post_id, post, content, featured_media_id))
         return {"link": f"https://example.com/existing/{post_id}"}
+
+    def sync_rank_math_meta(self, post_id: int, post: Post):
+        self.synced.append((post_id, list(post.focus_keywords)))
+        return {"post_id": post_id, "keyword_count": len(post.focus_keywords)}
 
 
 class PosterServiceTest(unittest.TestCase):
@@ -69,6 +75,7 @@ class PosterServiceTest(unittest.TestCase):
         self.assertEqual(orphans, [])
         self.assertEqual(len(fake.created), 1)
         self.assertEqual(len(fake.updated), 1)
+        self.assertEqual(fake.synced, [(2, []), (99, ["keyword"])])
         self.assertEqual(fake.updated[0][0], 99)
         self.assertIn("<img", fake.updated[0][2])
         self.assertIsNotNone(fake.updated[0][3])
@@ -353,6 +360,225 @@ class PosterServiceTest(unittest.TestCase):
             exported_sheet = load_workbook(output_path)["Bài SEO HTML"]
             self.assertEqual(exported_sheet.max_column, 3)
             self.assertEqual(exported_sheet.cell(row=2, column=3).value, "https://example.com/bai-1")
+
+
+class FakeSiteClient:
+    """Fake WordPress client with three posts in different completeness states."""
+
+    def __init__(self):
+        self.posts = {
+            101: {
+                "id": 101,
+                "link": "https://example.com/bai-mot",
+                "slug": "bai-mot",
+                "content": {"raw": "<p>Đã có nội dung</p>"},
+                "excerpt": {"raw": ""},
+                "categories": [2],
+                "tags": [5],
+                "featured_media": 9,
+                "meta": {
+                    "rank_math_title": "Tiêu đề SEO cũ",
+                    "rank_math_description": "",
+                    "rank_math_focus_keyword": "old keyword",
+                },
+            },
+            102: {
+                "id": 102,
+                "link": "https://example.com/bai-hai",
+                "slug": "bai-hai",
+                "content": {"raw": "<p>Nội dung</p>"},
+                "excerpt": {"raw": "Mô tả sẵn"},
+                "categories": [1],
+                "tags": [],
+                "featured_media": 0,
+                "meta": {
+                    "rank_math_title": "SEO",
+                    "rank_math_description": "Mô tả",
+                    "rank_math_focus_keyword": "kw",
+                },
+            },
+            103: {
+                "id": 103,
+                "link": "https://example.com/bai-ba",
+                "slug": "bai-ba",
+                "content": {"raw": "<p>Nội dung</p>"},
+                "excerpt": {"raw": "Mô tả đầy đủ"},
+                "categories": [3],
+                "tags": [7],
+                "featured_media": 12,
+                "meta": {
+                    "rank_math_title": "SEO",
+                    "rank_math_description": "Mô tả",
+                    "rank_math_focus_keyword": "kw",
+                },
+            },
+        }
+        self.updated_fields: list[tuple[int, dict]] = []
+        self.synced: list[tuple[int, dict]] = []
+        self.terms: list[tuple[str, str]] = []
+
+    def get_post(self, post_id: int):
+        if post_id not in self.posts:
+            raise RuntimeError(f"Post {post_id} not found")
+        return self.posts[post_id]
+
+    def find_post_by_slug(self, slug: str):
+        normalized = slug.strip().split("?", 1)[0].split("#", 1)[0]
+        if "://" in normalized:
+            normalized = normalized.rstrip("/").rsplit("/", 1)[-1]
+        normalized = normalized.strip("/")
+        for post in self.posts.values():
+            if post.get("slug") == normalized:
+                return post
+        return None
+
+    def find_post_by_title(self, title: str):
+        return None
+
+    def get_or_create_term(self, taxonomy: str, name: str) -> int:
+        self.terms.append((taxonomy, name))
+        return 77 if taxonomy == "categories" else 88
+
+    def upload_media_from_url(self, url: str) -> UploadedMedia:
+        return UploadedMedia(55, url, "anh.jpg")
+
+    def update_post_fields(self, post_id: int, fields: dict):
+        self.updated_fields.append((post_id, fields))
+        return {"id": post_id, "link": self.posts[post_id]["link"]}
+
+    def sync_rank_math_fields(self, post_id: int, fields: dict):
+        self.synced.append((post_id, fields))
+        return {"supported": True, "post_id": post_id}
+
+
+class UpdateWebsitePostsFromExcelTest(unittest.TestCase):
+    def _write_workbook(self, directory: str, rows: list[dict]) -> Path:
+        import pandas as pd
+
+        workbook = Path(directory) / "updates.xlsx"
+        pd.DataFrame(rows).to_excel(workbook, sheet_name="Cập nhật", index=False)
+        return workbook
+
+    def test_fill_missing_only_patches_empty_fields(self) -> None:
+        try:
+            import pandas as pd  # noqa: F401
+        except ImportError:
+            self.skipTest("pandas is not installed")
+
+        fake = FakeSiteClient()
+        config = WordPressConfig("https://example.com", "u", "p")
+        with tempfile.TemporaryDirectory() as directory:
+            workbook = self._write_workbook(
+                directory,
+                [
+                    {"ID": 101, "Mô tả Meta SEO": "Mô tả mới", "Từ khóa chính": "kw mới"},
+                    {
+                        "Link bài viết": "https://example.com/bai-hai/",
+                        "Danh mục": "Tin Tức",
+                        "Tags": "tag mới",
+                        "URL ảnh đại diện": "https://cdn.example.com/anh.jpg",
+                    },
+                    {"Tiêu đề SEO": "Không tồn tại", "Mô tả Meta SEO": "abc"},
+                    {"ID": 103, "Mô tả Meta SEO": "Mô tả khác"},
+                ],
+            )
+            results = update_website_posts_from_excel(
+                workbook,
+                config,
+                client_factory=lambda _: fake,
+            )
+
+        self.assertEqual(
+            [result.status for result in results],
+            ["success", "success", "skipped", "skipped"],
+        )
+
+        # Post 101: existing keywords are kept, missing description/excerpt are filled.
+        post_101_fields = dict(fake.updated_fields)[101]
+        self.assertEqual(post_101_fields["excerpt"], "Mô tả mới")
+        self.assertEqual(post_101_fields["meta"], {"rank_math_description": "Mô tả mới"})
+        self.assertNotIn("content", post_101_fields)
+        post_101_sync = dict(fake.synced)[101]
+        self.assertEqual(post_101_sync["focus_keywords"], ["old keyword"])
+        self.assertEqual(post_101_sync["meta_description"], "Mô tả mới")
+        self.assertNotIn("seo_title", post_101_sync)
+
+        # Post 102: default category, empty tags and missing featured image are filled.
+        post_102_fields = dict(fake.updated_fields)[102]
+        self.assertEqual(post_102_fields["categories"], [77])
+        self.assertEqual(post_102_fields["tags"], [88])
+        self.assertEqual(post_102_fields["featured_media"], 55)
+        self.assertNotIn("meta", post_102_fields)
+        self.assertNotIn(102, dict(fake.synced))
+        self.assertIn(("categories", "Tin Tức"), fake.terms)
+        self.assertIn(("tags", "tag mới"), fake.terms)
+
+        # Row 3 has no matching post; row 4 already has every provided field.
+        self.assertIn("Không tìm thấy", results[2].error)
+        self.assertIn("đủ dữ liệu", results[3].error)
+        self.assertEqual({post_id for post_id, _ in fake.updated_fields}, {101, 102})
+
+    def test_overwrite_mode_replaces_existing_values(self) -> None:
+        try:
+            import pandas as pd  # noqa: F401
+        except ImportError:
+            self.skipTest("pandas is not installed")
+
+        fake = FakeSiteClient()
+        config = WordPressConfig("https://example.com", "u", "p")
+        with tempfile.TemporaryDirectory() as directory:
+            workbook = self._write_workbook(
+                directory,
+                [
+                    {
+                        "ID": 101,
+                        "Từ khóa chính": "kw mới",
+                        "Trạng thái": "draft",
+                        "Nội dung HTML": "<p>Nội dung mới</p>",
+                    }
+                ],
+            )
+            results = update_website_posts_from_excel(
+                workbook,
+                config,
+                only_fill_missing=False,
+                client_factory=lambda _: fake,
+            )
+
+        self.assertEqual([result.status for result in results], ["success"])
+        post_101_fields = dict(fake.updated_fields)[101]
+        self.assertEqual(post_101_fields["status"], "draft")
+        self.assertEqual(post_101_fields["content"], "<p>Nội dung mới</p>")
+        self.assertEqual(post_101_fields["meta"]["rank_math_focus_keyword"], "kw mới")
+        post_101_sync = dict(fake.synced)[101]
+        self.assertEqual(post_101_sync["focus_keywords"], ["kw mới"])
+
+    def test_stop_event_halts_processing(self) -> None:
+        try:
+            import pandas as pd  # noqa: F401
+        except ImportError:
+            self.skipTest("pandas is not installed")
+
+        from threading import Event
+
+        fake = FakeSiteClient()
+        config = WordPressConfig("https://example.com", "u", "p")
+        stop_event = Event()
+        stop_event.set()
+        with tempfile.TemporaryDirectory() as directory:
+            workbook = self._write_workbook(
+                directory,
+                [{"ID": 101, "Mô tả Meta SEO": "Mô tả mới"}],
+            )
+            results = update_website_posts_from_excel(
+                workbook,
+                config,
+                stop_event=stop_event,
+                client_factory=lambda _: fake,
+            )
+
+        self.assertEqual(results, [])
+        self.assertEqual(fake.updated_fields, [])
 
 
 if __name__ == "__main__":
