@@ -246,6 +246,7 @@ def _mode_label(mode: str) -> str:
         "manual": "Thủ công",
         "website_bulk_publish": "Xuất bản bài trên web",
         "website_image_layout": "Sửa ảnh bài trên web",
+        "website_add_images": "Thêm ảnh vào bài trên web",
         "website_excel_update": "Cập nhật bài từ Excel",
     }
     return labels.get(mode, mode)

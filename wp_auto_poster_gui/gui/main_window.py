@@ -74,6 +74,7 @@ from wp_auto_poster_gui.gui.workers import (
     ConnectionTestWorker,
     ImageLayoutUpdateWorker,
     PosterWorker,
+    WebsiteAddImagesWorker,
     WebsiteBulkPublishWorker,
     WebsiteExcelUpdateWorker,
     WebsiteImageLayoutUpdateWorker,
@@ -134,6 +135,7 @@ class MainWindow(QMainWindow):
         self.image_layout_worker: ImageLayoutUpdateWorker | None = None
         self.bulk_publish_worker: BulkPublishWorker | None = None
         self.website_loader_worker: WebsitePostsLoadWorker | None = None
+        self.website_add_images_worker: WebsiteAddImagesWorker | None = None
         self.website_bulk_publish_worker: WebsiteBulkPublishWorker | None = None
         self.website_image_layout_worker: WebsiteImageLayoutUpdateWorker | None = None
         self.website_excel_update_worker: WebsiteExcelUpdateWorker | None = None
@@ -487,11 +489,30 @@ class MainWindow(QMainWindow):
         image_options.addStretch(1)
         action_layout.addLayout(image_options)
 
+        image_source_row = QHBoxLayout()
+        self.website_image_folder_edit = QLineEdit()
+        self.website_image_folder_edit.setPlaceholderText(
+            "Thư mục ảnh: {ID hoặc slug}_thumb, _1, _2..."
+        )
+        website_image_folder_button = QPushButton("Chọn thư mục ảnh")
+        website_image_folder_button.clicked.connect(self._choose_website_image_folder)
+        self.website_max_images_spin = QSpinBox()
+        self.website_max_images_spin.setRange(1, 50)
+        self.website_max_images_spin.setValue(2)
+        self.website_max_images_spin.setPrefix("Tối đa ")
+        self.website_max_images_spin.setSuffix(" ảnh/bài")
+        image_source_row.addWidget(self.website_image_folder_edit, 1)
+        image_source_row.addWidget(website_image_folder_button)
+        image_source_row.addWidget(self.website_max_images_spin)
+        action_layout.addLayout(image_source_row)
+
         website_actions = QHBoxLayout()
         self.website_publish_button = QPushButton("📣 Xuất bản bài đã chọn")
         self.website_publish_button.clicked.connect(self._start_website_bulk_publish)
         self.website_update_image_button = QPushButton("🖼 Sửa cỡ/căn ảnh bài đã chọn")
         self.website_update_image_button.clicked.connect(self._start_website_image_layout_update)
+        self.website_add_images_button = QPushButton("➕ Thêm ảnh vào bài đã chọn")
+        self.website_add_images_button.clicked.connect(self._start_website_add_images)
         self.website_stop_button = QPushButton("■ Dừng")
         self.website_stop_button.setFixedWidth(90)
         self.website_stop_button.setEnabled(False)
@@ -501,6 +522,7 @@ class MainWindow(QMainWindow):
         self.website_progress.hide()
         website_actions.addWidget(self.website_publish_button)
         website_actions.addWidget(self.website_update_image_button)
+        website_actions.addWidget(self.website_add_images_button)
         website_actions.addWidget(self.website_stop_button)
         website_actions.addWidget(self.website_progress, 1)
         action_layout.addLayout(website_actions)
@@ -882,7 +904,7 @@ class MainWindow(QMainWindow):
     def _website_poster_options(self) -> PosterOptions:
         alignment, display_size, custom_width = self._current_website_image_settings()
         return PosterOptions(
-            max_images_per_post=0,
+            max_images_per_post=self.website_max_images_spin.value(),
             image_alignment=alignment,
             image_display_size=display_size,
             image_custom_width=custom_width,
@@ -1020,6 +1042,47 @@ class MainWindow(QMainWindow):
         self.website_image_layout_worker.completed.connect(self._on_website_image_layout_update_completed)
         self.website_image_layout_worker.start()
 
+    def _choose_website_image_folder(self) -> None:
+        start_path = self.website_image_folder_edit.text().strip() or self.image_folder_edit.text().strip()
+        folder = QFileDialog.getExistingDirectory(self, "Chọn thư mục ảnh thêm vào bài", start_path)
+        if folder:
+            self.website_image_folder_edit.setText(folder)
+
+    def _start_website_add_images(self) -> None:
+        selected_posts = self._selected_website_posts()
+        if not selected_posts:
+            QMessageBox.warning(self, "Chưa chọn bài", "Cần tick chọn ít nhất một bài viết trên website.")
+            return
+        image_folder = self.website_image_folder_edit.text().strip()
+        if not image_folder or not Path(image_folder).is_dir():
+            QMessageBox.warning(self, "Chưa có thư mục ảnh", "Cần chọn thư mục ảnh hợp lệ trước khi thêm ảnh.")
+            return
+        config = self._current_config()
+        if not config:
+            return
+        if QMessageBox.question(
+            self,
+            "Xác nhận thêm ảnh vào bài trên web",
+            f"Ứng dụng sẽ tải ảnh lên Media và chèn ảnh mới vào {len(selected_posts)} bài đã chọn. "
+            "Ảnh phải bắt đầu bằng ID hoặc slug của bài; thumb/bg nằm đầu bài, _1, _2... nằm trong nội dung. "
+            "Nội dung chữ và SEO không bị thay đổi.",
+        ) != QMessageBox.Yes:
+            return
+
+        self._manual_run_started_at = current_timestamp()
+        self.stop_event.clear()
+        self._set_website_busy(True, allow_stop=True)
+        self.website_add_images_worker = WebsiteAddImagesWorker(
+            selected_posts,
+            image_folder,
+            config,
+            self._website_poster_options(),
+            self.stop_event,
+        )
+        self.website_add_images_worker.progress.connect(self._website_log)
+        self.website_add_images_worker.completed.connect(self._on_website_add_images_completed)
+        self.website_add_images_worker.start()
+
     def _choose_website_excel(self) -> None:
         file_path, _ = QFileDialog.getOpenFileName(
             self,
@@ -1137,6 +1200,28 @@ class MainWindow(QMainWindow):
         self._manual_run_started_at = None
         self._website_log(f"Đã lưu lịch sử sửa ảnh bài trên web: {record.finished_at}")
 
+    def _on_website_add_images_completed(self, results, orphan_files) -> None:
+        self.results = list(results)
+        fill_result_table(self.website_result_table, self.results)
+        fill_result_table(self.result_table, self.results)
+        self._set_website_busy(False)
+        success = sum(1 for result in self.results if result.status == "success")
+        self.website_status_label.setText(f"Thêm ảnh xong: {success}/{len(self.results)} thành công.")
+        self._website_log(f"Hoàn tất thêm ảnh bài trên web: {success}/{len(self.results)} thành công")
+        if orphan_files:
+            self._website_log(f"Có {len(orphan_files)} ảnh không khớp ID/slug bài đã chọn")
+        record = self._append_run_history(
+            mode="website_add_images",
+            results=self.results,
+            excel_path="",
+            image_folder=self.website_image_folder_edit.text().strip(),
+            export_path=None,
+            orphan_files=orphan_files,
+            started_at=self._manual_run_started_at,
+        )
+        self._manual_run_started_at = None
+        self._website_log(f"Đã lưu lịch sử thêm ảnh bài trên web: {record.finished_at}")
+
     def _mark_website_posts_published(self, results) -> None:
         published_ids = {
             int(result.row_number)
@@ -1158,6 +1243,7 @@ class MainWindow(QMainWindow):
         self.website_clear_selection_button.setEnabled(not busy)
         self.website_publish_button.setEnabled(not busy)
         self.website_update_image_button.setEnabled(not busy)
+        self.website_add_images_button.setEnabled(not busy)
         if hasattr(self, "website_excel_update_button"):
             self.website_excel_update_button.setEnabled(not busy)
         self.website_stop_button.setEnabled(busy and allow_stop)

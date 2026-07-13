@@ -10,8 +10,8 @@ class ContentComposerTest(unittest.TestCase):
     def test_inserts_images_evenly_into_html_paragraphs(self) -> None:
         content = "<p>A</p><p>B</p><p>C</p>"
         images = [
-            UploadedMedia(11, "https://example.com/1.jpg"),
-            UploadedMedia(12, "https://example.com/2.jpg"),
+            UploadedMedia(11, "https://example.com/1.jpg", "1.jpg"),
+            UploadedMedia(12, "https://example.com/2.jpg", "2.jpg"),
         ]
 
         output = compose_content_with_images(content, "Demo", images)
@@ -20,6 +20,7 @@ class ContentComposerTest(unittest.TestCase):
         self.assertIn('class="wp-image-12 aligncenter"', output)
         self.assertLess(output.index("wp-image-11"), output.index("wp-image-12"))
         self.assertEqual(output.count("<img"), 2)
+        self.assertIn('data-pmedia-source="1.jpg"', output)
 
     def test_returns_original_without_images(self) -> None:
         self.assertEqual(compose_content_with_images("A", "Demo", []), "A")

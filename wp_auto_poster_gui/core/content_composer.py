@@ -42,9 +42,14 @@ def _image_html(
         if width is not None:
             attrs = f' width="{width}"'
 
+    source_attr = ""
+    if media.filename:
+        source_name = html.escape(media.filename, quote=True)
+        source_attr = f' data-pmedia-source="{source_name}"'
+
     return (
         f'<p><img src="{src}" alt="{alt}" '
-        f'class="{css_class}"{attrs} /></p>'
+        f'class="{css_class}"{source_attr}{attrs} /></p>'
     )
 
 

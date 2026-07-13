@@ -293,6 +293,57 @@ class PosterServiceTest(unittest.TestCase):
         self.assertIn("aligncenter", fake.updated[0][1])
         self.assertIn("width=\"600\"", fake.updated[0][1])
 
+    def test_add_images_to_website_posts_matches_slug_and_skips_existing_image(self) -> None:
+        from wp_auto_poster_gui.core.poster_service import add_images_to_website_posts
+
+        class WebsiteAddImagesClient:
+            def __init__(self):
+                self.uploaded: list[str] = []
+                self.updated: list[tuple[int, str]] = []
+
+            def get_post(self, post_id: int):
+                return {
+                    "id": post_id,
+                    "title": {"rendered": "Bài có ảnh"},
+                    "link": "https://example.com/bai-co-anh",
+                    "content": {
+                        "raw": '<p>A</p><p><img src="https://example.com/uploads/bai-co-anh-1.jpg" '
+                        'data-pmedia-source="bai-co-anh_1.jpg" /></p><p>B</p>'
+                    },
+                }
+
+            def upload_media_from_path(self, path: Path):
+                self.uploaded.append(path.name)
+                return UploadedMedia(
+                    100 + len(self.uploaded),
+                    f"https://example.com/uploads/{path.name}",
+                    path.name,
+                )
+
+            def update_post_content(self, post_id: int, content: str):
+                self.updated.append((post_id, content))
+                return {"id": post_id, "link": "https://example.com/bai-co-anh"}
+
+        fake = WebsiteAddImagesClient()
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            (folder / "bai-co-anh_thumb.jpg").write_bytes(b"thumb")
+            (folder / "bai-co-anh_1.jpg").write_bytes(b"existing")
+            (folder / "bai-co-anh_2.jpg").write_bytes(b"new")
+            results, orphan_files = add_images_to_website_posts(
+                [{"id": 21, "slug": "bai-co-anh", "title": {"rendered": "Bài có ảnh"}}],
+                folder,
+                WordPressConfig("https://example.com", "u", "p"),
+                PosterOptions(max_images_per_post=3, image_alignment="aligncenter"),
+                client_factory=lambda _: fake,
+            )
+
+        self.assertEqual([result.status for result in results], ["success"])
+        self.assertEqual(fake.uploaded, ["bai-co-anh_thumb.jpg", "bai-co-anh_2.jpg"])
+        self.assertEqual(fake.updated[0][1].count("<img"), 3)
+        self.assertIn('data-pmedia-source="bai-co-anh_thumb.jpg"', fake.updated[0][1])
+        self.assertEqual(orphan_files, [])
+
     def test_export_links_to_source_excel_appends_adjacent_link_column(self) -> None:
         try:
             from openpyxl import Workbook, load_workbook

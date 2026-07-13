@@ -4,9 +4,11 @@ from copy import copy
 from datetime import datetime
 import tempfile
 from pathlib import Path
+import re
 import time
 from threading import Event
 from typing import Any, Callable, Iterable
+from urllib.parse import unquote, urlsplit
 from zipfile import ZipFile
 
 from .content_composer import compose_content_with_images, rewrite_existing_image_layout
@@ -322,6 +324,147 @@ def update_website_posts_image_layout(
     return results
 
 
+def add_images_to_website_posts(
+    post_payloads: Iterable[dict[str, Any]],
+    image_folder: str | Path,
+    config: WordPressConfig,
+    options: PosterOptions,
+    progress_callback: ProgressCallback | None = None,
+    stop_event: Event | None = None,
+    client_factory: ClientFactory = _make_client,
+) -> tuple[list[PostResult], list[Path]]:
+    """Upload local images and insert them into selected website posts."""
+
+    progress = progress_callback or _default_progress
+    payloads = list(post_payloads)
+    aliases_by_post: dict[int, list[str]] = {}
+    all_aliases: list[str] = []
+    for payload in payloads:
+        post_id = _website_post_id(payload)
+        if post_id is None:
+            continue
+        aliases = [str(post_id)]
+        slug = _website_post_slug(payload)
+        if slug and slug not in aliases:
+            aliases.append(slug)
+        aliases_by_post[post_id] = aliases
+        all_aliases.extend(aliases)
+
+    matches, orphan_files = match_images_for_posts(
+        image_folder,
+        all_aliases,
+        max_images_per_post=options.max_images_per_post,
+    )
+    client = client_factory(config)
+    results: list[PostResult] = []
+
+    for index, payload in enumerate(payloads, start=1):
+        if stop_event and stop_event.is_set():
+            progress("Stopped by user")
+            break
+
+        post_id = _website_post_id(payload)
+        title = _website_post_title(payload)
+        progress(f"Đang thêm ảnh vào bài #{post_id or index}: {title}")
+        try:
+            if post_id is None:
+                results.append(PostResult(index, title, "failed", error="Bài viết không có ID"))
+                continue
+
+            current_payload = getattr(client, "get_post")(post_id) if hasattr(client, "get_post") else payload
+            current_content = _post_content(current_payload) or _post_content(payload) or ""
+            leading_path, content_paths = _merge_website_image_matches(
+                aliases_by_post.get(post_id, []),
+                matches,
+                options.max_images_per_post,
+            )
+            leading_paths = [leading_path] if leading_path else []
+            leading_paths = [path for path in leading_paths if not _content_has_local_image(current_content, path)]
+            content_paths = [path for path in content_paths if not _content_has_local_image(current_content, path)]
+
+            if not leading_paths and not content_paths:
+                results.append(
+                    PostResult(
+                        post_id,
+                        title,
+                        "skipped",
+                        link=_post_link(current_payload) or _post_link(payload),
+                        error="Không tìm thấy ảnh mới đúng tên ID/slug hoặc ảnh đã có trong bài",
+                    )
+                )
+                progress(f"Không có ảnh mới đúng tên cho bài: {title}")
+                continue
+
+            uploaded_leading: list[UploadedMedia] = []
+            for image_path in leading_paths:
+                media = getattr(client, "upload_media_from_path")(image_path)
+                uploaded_leading.append(media)
+                progress(f"Đã tải ảnh đầu bài: {image_path.name} -> {media.source_url}")
+
+            uploaded_content: list[UploadedMedia] = []
+            for image_path in content_paths:
+                media = getattr(client, "upload_media_from_path")(image_path)
+                uploaded_content.append(media)
+                progress(f"Đã tải ảnh nội dung: {image_path.name} -> {media.source_url}")
+
+            updated_content = compose_content_with_images(
+                current_content,
+                title,
+                uploaded_content,
+                leading_images=uploaded_leading,
+                alignment=options.image_alignment,
+                display_size=options.image_display_size,
+                custom_width=options.image_custom_width,
+            )
+            response_payload = getattr(client, "update_post_content")(post_id, updated_content)
+            link = _post_link(response_payload) or _post_link(current_payload) or _post_link(payload)
+            inserted_count = len(uploaded_leading) + len(uploaded_content)
+            results.append(
+                PostResult(post_id, title, "success", link=link, error=f"Đã thêm {inserted_count} ảnh")
+            )
+            progress(f"Đã thêm {inserted_count} ảnh vào bài: {title}")
+        except Exception as exc:
+            results.append(PostResult(post_id or index, title, "failed", error=str(exc)))
+            progress(f"Lỗi thêm ảnh bài #{post_id or index}: {exc}")
+
+    return results, orphan_files
+
+
+def _merge_website_image_matches(
+    aliases: list[str],
+    matches: dict[str, Any],
+    max_images_per_post: int,
+) -> tuple[Path | None, list[Path]]:
+    leading: Path | None = None
+    content: list[Path] = []
+    seen: set[Path] = set()
+    for alias in aliases:
+        matched = matches.get(alias)
+        if not matched:
+            continue
+        if leading is None and matched.background:
+            leading = matched.background
+        for path in matched.content_images:
+            if path not in seen:
+                seen.add(path)
+                content.append(path)
+    return leading, content[: max(0, max_images_per_post)]
+
+
+def _content_has_local_image(content: str, image_path: Path) -> bool:
+    target = image_path.name.casefold()
+    markers = re.findall(r'''data-pmedia-source\s*=\s*["']([^"']+)["']''', content, re.IGNORECASE)
+    if any(Path(unquote(value)).name.casefold() == target for value in markers):
+        return True
+
+    sources = re.findall(r'''<img\b[^>]*?\bsrc\s*=\s*["']([^"']+)["']''', content, re.IGNORECASE)
+    for source in sources:
+        source_name = Path(unquote(urlsplit(source).path)).name.casefold()
+        if source_name == target:
+            return True
+    return False
+
+
 def update_website_posts_from_excel(
     excel_path: str | Path,
     config: WordPressConfig,
@@ -576,6 +719,12 @@ def _website_post_title(payload: object) -> str:
     elif isinstance(title, str):
         value = title
     return _strip_html_text(value).strip() or "Không rõ tiêu đề"
+
+
+def _website_post_slug(payload: object) -> str:
+    if not isinstance(payload, dict):
+        return ""
+    return str(payload.get("slug") or "").strip().strip("/")
 
 
 def _strip_html_text(value: str) -> str:

@@ -7,6 +7,7 @@ from PySide6.QtCore import QThread, Signal
 from wp_auto_poster_gui.core.excel_reader import read_posts_from_excel
 from wp_auto_poster_gui.core.models import PosterOptions, WordPressConfig
 from wp_auto_poster_gui.core.poster_service import (
+    add_images_to_website_posts,
     list_website_posts,
     publish_existing_posts_bulk,
     publish_from_excel,
@@ -242,3 +243,38 @@ class WebsiteImageLayoutUpdateWorker(QThread):
         except Exception as exc:
             self.progress.emit(f"Lỗi: {exc}")
             self.completed.emit([])
+
+
+class WebsiteAddImagesWorker(QThread):
+    progress = Signal(str)
+    completed = Signal(object, object)
+
+    def __init__(
+        self,
+        posts: list[dict],
+        image_folder: str,
+        config: WordPressConfig,
+        options: PosterOptions,
+        stop_event: Event,
+    ):
+        super().__init__()
+        self.posts = posts
+        self.image_folder = image_folder
+        self.config = config
+        self.options = options
+        self.stop_event = stop_event
+
+    def run(self) -> None:
+        try:
+            results, orphan_files = add_images_to_website_posts(
+                self.posts,
+                self.image_folder,
+                self.config,
+                self.options,
+                progress_callback=self.progress.emit,
+                stop_event=self.stop_event,
+            )
+            self.completed.emit(results, orphan_files)
+        except Exception as exc:
+            self.progress.emit(f"Lỗi: {exc}")
+            self.completed.emit([], [])

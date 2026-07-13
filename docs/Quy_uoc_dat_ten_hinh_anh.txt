@@ -24,3 +24,11 @@ QUY ƯỚC ĐẶT TÊN HÌNH ẢNH CHO PMEDIA-ĐĂNG BÀI TỰ ĐỘNG WORDPRESS
    - Dùng dấu gạch dưới _ sau ma_bai.
    - Không đặt khoảng trắng hoặc tiếng Việt có dấu trong ma_bai.
    - File không khớp ma_bai sẽ hiện cảnh báo trong preview.
+
+6. Thêm ảnh vào bài đã có trên website:
+   - Mở tab Bài trên web và tải danh sách bài.
+   - Có thể dùng ID bài hoặc slug thay cho ma_bai.
+   - Ví dụ theo ID: 123_thumb.jpg, 123_1.jpg, 123_2.jpg.
+   - Ví dụ theo slug: ten-bai_thumb.jpg, ten-bai_1.jpg, ten-bai_2.jpg.
+   - Ảnh thumb/bg nằm đầu bài; ảnh đánh số được phân bố trong nội dung.
+   - App bỏ qua ảnh đã chèn bởi PMEDIA để tránh thêm trùng khi chạy lại.
